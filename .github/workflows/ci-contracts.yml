@@ -1,0 +1,36 @@
+name: Contracts CI
+
+on:
+  push:
+    paths:
+      - "packages/contracts/**"
+  pull_request:
+    paths:
+      - "packages/contracts/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check formatting
+        run: forge fmt --check
+        working-directory: packages/contracts
+
+      - name: Build
+        run: forge build
+        working-directory: packages/contracts
+
+      - name: Run tests
+        run: forge test -vvv
+        working-directory: packages/contracts
+
+      - name: Coverage report
+        run: forge coverage --report summary
+        working-directory: packages/contracts
