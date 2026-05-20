@@ -1,0 +1,55 @@
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# PRD and internal strategy docs — never push
+*_PRD.md
+*_prd.md
+docs/PRD*
+docs/prd*
+PHRONOS_PRD.md
+
+# Node
+node_modules/
+.pnpm-store/
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+apps/web/.vercel/
+
+# Foundry
+packages/contracts/out/
+packages/contracts/cache/
+packages/contracts/broadcast/
+packages/contracts/lib/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Coverage
+lcov.info
+coverage/
+
+# Playwright
+test-results/
+playwright-report/
