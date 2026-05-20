@@ -1,0 +1,19 @@
+{
+  "name": "@phronos/keeper",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@phronos/db": "workspace:*",
+    "@phronos/shared": "workspace:*",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

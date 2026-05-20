@@ -1,0 +1,13 @@
+{
+  "name": "@phronos/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "viem": "^2.0.0",
+    "zod": "^3.22.0"
+  }
+}
