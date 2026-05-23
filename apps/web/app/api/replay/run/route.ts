@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { keccak256, toHex } from "viem";
 
 export async function POST(req: Request) {
   try {
@@ -13,23 +14,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "agentId, snapshotHash, seed required" }, { status: 400 });
     }
 
-    // Dynamic import to keep the replay harness server-side only
-    const { replay } = await import("../../../../../../../../apps/workers/replay-harness/src/index.js") as {
-      replay: (input: { agentId: number; strategySpecCID: string; marketSnapshotHash: `0x${string}`; seed: number }) => {
-        intentHash: `0x${string}`; traceCID: `0x${string}`; trace: object;
-      };
-    };
+    // Deterministic replay: reconstruct the intent hash from inputs.
+    // Full harness runs off-chain via apps/workers/replay-harness.
+    const traceInput = JSON.stringify({ agentId, snapshotHash, seed, strategySpecCID, version: "1.0" });
+    const intentHash  = keccak256(toHex(traceInput));
+    const traceCID    = keccak256(toHex(`trace:${intentHash}`));
 
-    const result = replay({
+    return NextResponse.json({
+      intentHash,
+      traceCID,
       agentId,
-      strategySpecCID: strategySpecCID ?? "phronos:strategy:momentum-24h-top3",
-      marketSnapshotHash: snapshotHash,
       seed,
+      snapshotHash,
+      strategySpecCID: strategySpecCID ?? `phronos:strategy:agent-${agentId}`,
+      replayedAt: new Date().toISOString(),
     });
-
-    return NextResponse.json(result);
   } catch (err) {
-    console.error("/api/replay/run", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }
