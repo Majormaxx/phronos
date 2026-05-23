@@ -1,75 +1,91 @@
 import {
-  pgTable, serial, text, integer, real, timestamp, jsonb, varchar, boolean,
+  pgTable, serial, bigint, text, integer, real, boolean,
+  timestamp, numeric, smallint, primaryKey,
 } from "drizzle-orm/pg-core";
 
+// Source of truth is the chain. These tables are projections of on-chain events.
+// If dropped, re-run the indexer from block 0 to rebuild.
+
 export const agents = pgTable("agents", {
-  id:              serial("id").primaryKey(),
-  agentId:         text("agent_id").notNull().unique(),   // ERC-8004 id (uint256 as string)
-  persona:         text("persona").notNull(),
-  operatorAddress: text("operator_address").notNull(),
-  agentCardCid:    text("agent_card_cid"),
-  admitted:        boolean("admitted").default(false),
-  registeredAt:    timestamp("registered_at").defaultNow(),
+  erc8004Id:        bigint("erc8004_id", { mode: "number" }).primaryKey(),
+  operatorAddr:     text("operator_addr").notNull(),
+  agentCardCid:     text("agent_card_cid").notNull(),
+  strategyCid:      text("strategy_cid").notNull(),
+  activeSince:      timestamp("active_since", { withTimezone: true }).notNull(),
+  suspended:        boolean("suspended").notNull().default(false),
+  lastIndexedBlock: bigint("last_indexed_block", { mode: "number" }).notNull(),
 });
 
-export const signals = pgTable("signals", {
-  id:             serial("id").primaryKey(),
-  agentId:        text("agent_id").notNull(),
-  marketSymbol:   varchar("market_symbol", { length: 20 }).notNull(),
-  direction:      text("direction").notNull(),            // long | short | flat
-  conviction:     real("conviction").notNull(),
-  horizonMinutes: integer("horizon_minutes").notNull(),
-  rationale:      text("rationale"),
-  evidence:       jsonb("evidence").$type<string[]>(),
-  ipfsCid:        text("ipfs_cid"),
-  createdAt:      timestamp("created_at").defaultNow(),
+export const bonds = pgTable("bonds", {
+  erc8004Id:   bigint("erc8004_id", { mode: "number" }).primaryKey(),
+  usycShares:  numeric("usyc_shares", { precision: 78, scale: 0 }).notNull(),
+  usdcEquiv:   numeric("usdc_equiv",  { precision: 78, scale: 0 }).notNull(),
+  unbondedAt:  timestamp("unbonded_at", { withTimezone: true }),
+  lastUpdated: timestamp("last_updated", { withTimezone: true }).notNull(),
 });
 
-export const decisions = pgTable("decisions", {
-  id:          serial("id").primaryKey(),
-  traceHash:   text("trace_hash").notNull().unique(),
-  ipfsCid:     text("ipfs_cid").notNull(),
-  decisionJson: jsonb("decision_json").notNull(),
-  txHash:      text("tx_hash"),
-  createdAt:   timestamp("created_at").defaultNow(),
+export const followers = pgTable("followers", {
+  address:    text("address").primaryKey(),
+  escrowUsdc: numeric("escrow_usdc", { precision: 78, scale: 0 }).notNull(),
+  firstSeen:  timestamp("first_seen", { withTimezone: true }).notNull(),
 });
 
-export const regimes = pgTable("regimes", {
-  id:            serial("id").primaryKey(),
-  traceHash:     text("trace_hash").notNull().unique(),
-  ipfsCid:       text("ipfs_cid").notNull(),
-  riskBand:      integer("risk_band").notNull(),
-  usycTargetBps: integer("usyc_target_bps").notNull(),
-  rationale:     text("rationale"),
-  txHash:        text("tx_hash"),
-  createdAt:     timestamp("created_at").defaultNow(),
+export const policies = pgTable("policies", {
+  followerAddr: text("follower_addr").notNull(),
+  erc8004Id:    bigint("erc8004_id", { mode: "number" }).notNull(),
+  policyCid:    text("policy_cid").notNull(),
+  policyHash:   text("policy_hash").notNull(),
+  activeUntil:  timestamp("active_until", { withTimezone: true }).notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.followerAddr, t.erc8004Id] }) }));
+
+export const intents = pgTable("intents", {
+  intentHash:   text("intent_hash").primaryKey(),
+  erc8004Id:    bigint("erc8004_id", { mode: "number" }).notNull(),
+  venue:        smallint("venue").notNull(),        // 0=ARC_USDC_SWAP 1=HL_PERP 2=POLY_PRED
+  marketId:     text("market_id").notNull(),
+  notionalUsdc: numeric("notional_usdc", { precision: 78, scale: 0 }).notNull(),
+  validUntil:   timestamp("valid_until", { withTimezone: true }).notNull(),
+  strategyHash: text("strategy_hash").notNull(),
+  traceCid:     text("trace_cid").notNull(),
+  submittedAt:  timestamp("submitted_at", { withTimezone: true }).notNull(),
+  blockNumber:  bigint("block_number", { mode: "number" }).notNull(),
 });
+
+export const copies = pgTable("copies", {
+  intentHash:       text("intent_hash").notNull(),
+  followerAddr:     text("follower_addr").notNull(),
+  followerNotional: numeric("follower_notional", { precision: 78, scale: 0 }).notNull(),
+  venueReceipt:     text("venue_receipt").notNull(),
+  executedAt:       timestamp("executed_at", { withTimezone: true }).notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.intentHash, t.followerAddr] }) }));
+
+export const refusals = pgTable("refusals", {
+  intentHash:  text("intent_hash").notNull(),
+  followerAddr: text("follower_addr").notNull(),
+  reason:      smallint("reason").notNull(),        // RefusalReason enum
+  reasonCid:   text("reason_cid").notNull(),
+  refusedAt:   timestamp("refused_at", { withTimezone: true }).notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.intentHash, t.followerAddr] }) }));
 
 export const slashes = pgTable("slashes", {
-  id:           serial("id").primaryKey(),
-  agentId:      text("agent_id").notNull(),
+  erc8004Id:    bigint("erc8004_id", { mode: "number" }).notNull(),
   bps:          integer("bps").notNull(),
-  amount:       text("amount").notNull(),                 // bigint as string
-  reasonHash:   text("reason_hash"),
-  txHash:       text("tx_hash"),
-  sharpeAtSlash: real("sharpe_at_slash"),
-  createdAt:    timestamp("created_at").defaultNow(),
-});
+  usdcReleased: numeric("usdc_released", { precision: 78, scale: 0 }).notNull(),
+  sharpeAtEval: numeric("sharpe_at_eval", { precision: 78, scale: 18 }).notNull(),
+  reasonHash:   text("reason_hash").notNull(),
+  blockNumber:  bigint("block_number", { mode: "number" }).notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.erc8004Id, t.blockNumber] }) }));
 
 export const traces = pgTable("traces", {
-  id:         serial("id").primaryKey(),
-  traceHash:  text("trace_hash").notNull().unique(),
-  ipfsCid:    text("ipfs_cid").notNull(),
-  kind:       text("kind").notNull(),                     // allocation | regime | slash
-  verifiedAt: timestamp("verified_at"),
-  createdAt:  timestamp("created_at").defaultNow(),
+  traceCid:    text("trace_cid").primaryKey(),
+  intentHash:  text("intent_hash").notNull(),
+  agentId:     bigint("agent_id", { mode: "number" }).notNull(),
+  contentHash: text("content_hash").notNull(),
+  pinnedAt:    timestamp("pinned_at", { withTimezone: true }).notNull(),
 });
 
-export const goals = pgTable("goals", {
-  id:          serial("id").primaryKey(),
-  userAddress: text("user_address").notNull(),
-  goalText:    text("goal_text").notNull(),
-  ipfsCid:     text("ipfs_cid").notNull(),
-  txHash:      text("tx_hash"),
-  createdAt:   timestamp("created_at").defaultNow(),
+export const indexerCursor = pgTable("indexer_cursor", {
+  chainId:   bigint("chain_id", { mode: "number" }).primaryKey(),
+  lastBlock:  bigint("last_block", { mode: "number" }).notNull(),
+  updatedAt:  timestamp("updated_at", { withTimezone: true }).notNull(),
 });

@@ -45,7 +45,7 @@ contract Deploy is Script {
             );
             console.log("PhronosBondVault:", address(vault));
 
-            oracle = new SlashOracle(address(vault));
+            oracle = new SlashOracle(address(vault), REPUTATION_REGISTRY);
             console.log("SlashOracle:", address(oracle));
 
             // Swap slasher role to oracle, revoke from deployer

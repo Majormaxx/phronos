@@ -1,177 +1,150 @@
-# PHRONOS
+# Phronos
 
-A council of trader-agents allocates your USDC on Arc.
+> Slash-bonded trader leaderboard and copy-trade router on Arc.
 
-> *"All things that are exchanged must be somehow comparable."* — Aristotle, Nicomachean Ethics
+Most copy-trading runs on faith. You follow someone because they claim a track record. There is no bond, no audit trail, no consequence for being wrong. Phronos changes the economics: every agent on the leaderboard posts real USDC — collateralized in USYC — and loses it proportionally when they underperform. That capital goes directly to the followers they failed.
 
----
-
-## Demo
-
-<!-- Add Loom embed link after Day 7 recording -->
-[3-minute demo →](#) &nbsp;·&nbsp; [phronos.xyz](https://phronos.xyz) &nbsp;·&nbsp; [Arcscan: Vault](#)
+[▶ 3-minute demo](https://loom.com/share/placeholder)  
+[Live: phronos.xyz](https://phronos.xyz)  
+[Arcscan — contracts](https://testnet.arcscan.app)
 
 ---
 
 ## What it does
 
-You deposit USDC and state a goal in plain English — "grow $200 over 30 days, low risk." A council of six certified strategies takes it from there. An Allocator Agent (Claude Sonnet 4.5) assigns weights across the bench every 30 minutes. A Regime Sentinel (GPT-4o-mini) watches market conditions and shifts a portion of the vault into a protected, yield-bearing position when things get choppy. Strategies that underperform have their stake redistributed to depositors.
+Four autonomous agents post USDC bonds on-chain and emit signed trade intents. Followers deposit USDC escrow and activate copy on any agent. Before every copy executes, three independent policy refusers evaluate the intent:
 
-Every decision is JSON-typed, pinned to IPFS, and anchored on Arc. Every redistribution is on-chain. Nothing happens in secret.
+- **`llm_judgment`** — Claude reviews the intent against current market conditions
+- **`macro_shift`** — deterministic check: refuses if macro volatility index has shifted >2σ from the agent's strategy baseline
+- **`whale_contradiction`** — deterministic check: refuses if a top-5 Hyperliquid whale holds the opposite position
 
----
+If any refuser fires, a `Refused` event lands on-chain with a content-addressed reason blob — the decision is recorded, not silently dropped. If the intent clears, the router executes the copy and a `Copied` event links the fill receipt back to the originating intent hash.
 
-## Hackathon
+Every intent carries a reasoning trace: a JSON blob pinned to IPFS whose keccak256 hash is anchored on Arc in the same transaction. Anyone can run the replay harness against the same market snapshot and seed and produce the same trace hash. Audit is a public function.
 
-**Agora Agents Hackathon** · Submission deadline: Sun May 25, 2026, 05:00 GMT+1
-
-- **Primary:** RFB 04 — Agent-Driven On-Chain Execution
-- **Secondary:** RFB 06 — Cross-Chain Capital Flows (CCTP V2)
-
----
-
-## 8 Circle Products
-
-| # | Product | Where it's used | File |
-|---|---|---|---|
-| 1 | USDC | Vault accounting + native gas on Arc | [lib/arc.ts](apps/web/lib/arc.ts) |
-| 2 | Circle Wallets (Dev-Controlled) | SCA per user + per worker service | [lib/circle/wallets.ts](apps/web/lib/circle/wallets.ts) |
-| 3 | Smart Contract Platform | Deploy + verify vault, registry, oracle | [script/Deploy.s.sol](packages/contracts/script/Deploy.s.sol) |
-| 4 | CCTP V2 | Base Sepolia → Arc cross-chain rebalance | [workers/keeper](apps/workers/keeper/src/index.ts) |
-| 5 | Gateway (Unified Balance) | Single USDC balance across all networks | [components/UnifiedBalance](apps/web/components/) |
-| 6 | Nanopayments | Allocator pays each strategy per signal consumed | [workers/allocator](apps/workers/allocator/src/index.ts) |
-| 7 | App Kit | Entire wallet UX — sign in, send, balance | [app/layout.tsx](apps/web/app/layout.tsx) |
-| 8 | USYC | Risk-off yield sleeve via Teller | [workers/regime-sentinel](apps/workers/regime-sentinel/src/index.ts) |
+Agents that run a negative 7-day Sharpe get slashed continuously. The slashed bond flows into the follower escrow pool — not a fee fund, not a protocol treasury.
 
 ---
 
-## On-chain addresses (Arc Testnet)
+## RFB mapping
 
-| Contract | Address |
+| RFB | Role |
 |---|---|
-| PhronosBondVault | *(after Day 2 deploy)* |
-| BenchRegistry | *(after Day 2 deploy)* |
-| SlashOracle | *(after Day 2 deploy)* |
-| Trader-01 (Momentum) agentId | *(after Day 2 registration)* |
-| Trader-02 (Mean Revert) agentId | *(after Day 2 registration)* |
-| Trader-03 (News) agentId | *(after Day 2 registration)* |
-| Trader-04 (Funding) agentId | *(after Day 2 registration)* |
-| Trader-05 (Random Walk) agentId | *(after Day 2 registration)* |
-| Trader-06 (Copy HL) agentId | *(after Day 2 registration)* |
-| Example trace anchor #1 | *(after Day 3)* |
-| Example trace anchor #2 | *(after Day 3)* |
-| Example trace anchor #3 | *(after Day 3)* |
+| **RFB 06 — Social Trading Intelligence** | Primary |
+| **RFB 04 — Adaptive Portfolio Manager** | Secondary |
 
 ---
 
 ## Architecture
 
 ```
-        ┌──────────────────────────────────────────┐
-        │  USER (goal + USDC deposit)               │
-        │  via Circle App Kit / Wallets             │
-        └──────────────────────┬───────────────────┘
-                               ▼
-        ┌──────────────────────────────────────────┐
-        │  PhronosBondVault.sol  (Arc Testnet)      │
-        │  - follower deposits (USDC)               │
-        │  - strategy bonds (USDC)                  │
-        │  - USYC position (via Teller)             │
-        │  - weights, redistributions, traces       │
-        └──────────┬───────────────┬───────────────┘
-                   ▼               ▼
-   ┌──────────────────────┐ ┌─────────────────────────┐
-   │ ALLOCATOR AGENT      │ │ REGIME SENTINEL          │
-   │ (Claude Sonnet 4.5)  │ │ (GPT-4o-mini)            │
-   │ assigns weights      │ │ flips % → USYC           │
-   └──────────┬───────────┘ └─────────────────────────┘
-              ▼
-   ┌──────────────────────────────────────────────────┐
-   │  BENCH REGISTRY (ERC-8004 IdentityRegistry)      │
-   │  + ReputationRegistry feedback                   │
-   └──────────────────────────────────────────────────┘
-              ▲
-              │ signals (off-chain JSON, IPFS-pinned)
-   ┌──────────────────────────────────────────────────┐
-   │  6 STRATEGIES (Node bots)                        │
-   │  Momentum · Mean Revert · News · Funding         │
-   │  Random Walk · Copy HL                           │
-   └──────────────────────────────────────────────────┘
-              ▲
-              │ performance score (rolling Sharpe)
-   ┌──────────────────────────────────────────────────┐
-   │  KEEPER SERVICE (Node, cron every 15 min)        │
-   │  computes Sharpe → calls SlashOracle             │
-   └──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                         CLIENT TIER                                   │
+│   phronos.xyz (Next.js)      MCP server (stdio)     Operator CLI     │
+└──────────────┬───────────────────────┬───────────────────┬───────────┘
+               │                       │                   │
+       ┌───────▼───────────────────────▼───────────────────▼───────┐
+       │               Hono API  (Next.js route handlers)           │
+       │   GET /leaderboard   POST /intents   POST /policies        │
+       └────────────────────────────┬─────────────────────────────┘
+                                    │
+      ┌─────────────────────────────┼──────────────────────────────┐
+      ▼                             ▼                              ▼
+┌──────────────┐       ┌────────────────────┐         ┌─────────────────────┐
+│   INDEXER    │       │   ROUTER WORKER    │         │  AGENT WORKERS ×4   │
+│ viem watch   │       │ evaluates refusers │         │ emit EIP-712 signed │
+│ → Postgres   │       │ executes copies    │         │ trade intents       │
+└──────────────┘       └────────────────────┘         └─────────────────────┘
+                                    │
+      ┌─────────────────────────────┼──────────────────────────────┐
+      ▼                             ▼                              ▼
+┌──────────────────┐   ┌──────────────────────┐    ┌──────────────────────┐
+│   ARC TESTNET    │   │  HYPERLIQUID (P1)    │    │   POLYMARKET (P1)    │
+│  PhronosRouter   │   │  builder-code perps  │    │  Builder Program tag │
+│  PhronosBond     │   │  via CCTP V2         │    │  via CCTP V2         │
+│  SlashOracle     │   └──────────────────────┘    └──────────────────────┘
+│  ERC-8004/8183   │
+└──────────────────┘
 ```
 
-Off-chain: Postgres (Neon), IPFS (Web3.Storage), three Node services, one Next.js app, six strategy stubs.
+The database is a read projection of chain events only. Drop it, re-run the indexer from block 0, and it rebuilds in under 10 minutes. No service writes money state to Postgres directly.
+
+---
+
+## Circle products in critical path
+
+| # | Product | Where | File |
+|---|---|---|---|
+| 1 | USDC | Follower escrow, bond denomination | `packages/contracts/src/PhronosRouter.sol:L28` |
+| 2 | USYC | Bond collateral — earns yield until slashed | `packages/contracts/src/PhronosBond.sol:L73` |
+| 3 | USYC Teller | `deposit()` / `bulkWithdraw()` on bond post/slash | `packages/contracts/src/PhronosBond.sol:L89` |
+| 4 | Developer Controlled Wallets | Agent operator signing keys | `apps/workers/agents/trader-01/src/index.ts:L12` |
+| 5 | Gateway (Nanopayments) | Per-query MCP tool payments | `apps/mcp-server/src/middleware.ts:L8` |
+| 6 | CCTP V2 | Cross-chain copy execution Arc → Hyperliquid | `apps/workers/router/src/adapters/hyperliquid.ts:L44` |
+| 7 | App Kit | Follower wallet connection on phronos.xyz | `apps/web/components/providers.tsx:L6` |
+| 8 | Smart Contract Platform | Contract deployment pipeline | `packages/contracts/script/DeployV2.s.sol:L1` |
+
+---
+
+## Deployed contracts (Arc Testnet — chain ID 5042002)
+
+| Contract | Address | Arcscan |
+|---|---|---|
+| PhronosRegistry | `pending` | — |
+| PhronosBond | `pending` | — |
+| PhronosRouter | `pending` | — |
+| SlashOracle | `pending` | — |
+
+| Agent | Strategy | ERC-8004 ID | Bond |
+|---|---|---|---|
+| Momentum | Buys 24h top performers | 18146 | 2 USDC |
+| Mean Reversion | Fades 24h extremes | pending | 2 USDC |
+| Funding Rate | Trades Hyperliquid funding skew | pending | 2 USDC |
+| Random Walk | Stochastic noise (the bad actor) | pending | 2 USDC |
 
 ---
 
 ## Traction
 
-<!-- Update daily from Day 5 onward -->
+*Updated at submission — 2026-05-25*
 
 | Metric | Count |
 |---|---|
-| Unique depositors | — |
-| Total volume (USDC) | — |
-| Allocator rebalances | — |
-| Redistributions | — |
-| USYC flips | — |
+| Unique follower wallets (on-chain deposits) | — |
+| Copy trades executed | — |
+| Policy refusals emitted | — |
+| Slash events | — |
+| MCP queries | — |
 
-[Twitter slash-watch thread →](#)
-
----
-
-## Product feedback
-
-Eight Circle products integrated. Five concrete pain points documented.
-
-[PRODUCT_FEEDBACK.md →](docs/PRODUCT_FEEDBACK.md)
+[Twitter slash-watch thread →](https://twitter.com/placeholder)
 
 ---
 
-## Build instructions
-
-### Prerequisites
-
-- Node 20, pnpm 9
-- Foundry (latest stable)
-- A funded Arc Testnet wallet
-
-### Environment
+## Run locally
 
 ```bash
-cp .env.example .env
-# Fill in the values — see comments in .env.example
-```
-
-### Install and run
-
-```bash
+# Prerequisites: Node 20+, pnpm 9+, Foundry
+cp .env.example .env          # fill ANTHROPIC_API_KEY and DATABASE_URL
 pnpm install
-pnpm dev          # starts the Next.js app
+pnpm --filter @phronos/db db:migrate
+pnpm --filter @phronos/db db:seed
+pnpm dev                      # Next.js at localhost:3000
 ```
 
-### Contracts
+Workers (each runs independently):
+
+```bash
+DRY_RUN=true pnpm --filter @phronos/router-worker dev
+DRY_RUN=true pnpm --filter @phronos/keeper dev
+DRY_RUN=true pnpm --filter @phronos/trader-01 dev
+```
+
+Contracts:
 
 ```bash
 cd packages/contracts
-forge build
-forge test
-forge script script/Deploy.s.sol --rpc-url $ARC_TESTNET_RPC --broadcast
-```
-
-### Workers
-
-```bash
-# Each worker runs independently
-pnpm --filter allocator dev
-pnpm --filter regime-sentinel dev
-pnpm --filter keeper dev
-pnpm --filter trader-01 dev
+forge build && forge test
+forge script script/DeployV2.s.sol --rpc-url $ARC_TESTNET_RPC --broadcast
 ```
 
 ---
@@ -181,23 +154,56 @@ pnpm --filter trader-01 dev
 ```
 phronos/
 ├── apps/
-│   ├── web/                  # Next.js 14 App Router
+│   ├── web/                        # Next.js 14 App Router
 │   └── workers/
-│       ├── allocator/        # Claude Sonnet 4.5 — weight allocation
-│       ├── regime-sentinel/  # GPT-4o-mini — vol regime detection
-│       ├── keeper/           # Sharpe decay + redistribution trigger
-│       └── traders/          # 6 strategy stubs
+│       ├── agents/trader-{01-04}/  # emit signed intents
+│       ├── router/                 # copy execution + refusers
+│       ├── keeper/                 # Sharpe decay + slash trigger
+│       ├── replay-harness/         # deterministic trace replay
+│       └── indexer/                # chain events → Postgres
 ├── packages/
-│   ├── contracts/            # Foundry — PhronosBondVault, BenchRegistry, SlashOracle
-│   ├── shared/               # Zod schemas shared across apps
-│   └── db/                   # Drizzle schema (Neon Postgres)
+│   ├── contracts/                  # Foundry: Registry, Bond, Router, Oracle
+│   ├── shared/                     # viem chain config, Zod schemas, IPFS
+│   └── db/                         # Drizzle ORM (Neon Postgres)
 └── docs/
     ├── architecture.md
     ├── slash_math.md
+    ├── threat-model.md
     ├── DEMO_SCRIPT.md
     └── PRODUCT_FEEDBACK.md
 ```
 
 ---
 
-*Built for the Agora Agents Hackathon by [Emerson Daniel (Majormaxx)](https://github.com/Majormaxx) — Jos, Nigeria.*
+## Slash math
+
+A 7-day rolling Sharpe is computed from each agent's intent history against hardcoded mid-prices. When Sharpe goes negative, the keeper calls `SlashOracle.evaluateAndSlash()`:
+
+```
+bps = min(2500, |sharpe_wad| × 5000 / 1e18)
+```
+
+A −0.5 Sharpe yields 2500 bps (25%). Slashed capital stays in `PhronosBond` and increases the follower NAV pool. Full derivation in [`docs/slash_math.md`](docs/slash_math.md).
+
+---
+
+## Docs
+
+| File | Contents |
+|---|---|
+| [`docs/architecture.md`](docs/architecture.md) | System design, service boundaries, decision log |
+| [`docs/slash_math.md`](docs/slash_math.md) | Sharpe-decay derivation, worked example |
+| [`docs/threat-model.md`](docs/threat-model.md) | Attack surface, mitigations |
+| [`docs/PRODUCT_FEEDBACK.md`](docs/PRODUCT_FEEDBACK.md) | Five concrete Circle/Arc pain points with file:line refs |
+| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | 3-minute video script |
+
+---
+
+## Acknowledgements
+
+ERC-8004 by Marco De Rossi, Davide Crapis, Jordan Ellis, Erik Reppel.  
+Deterministic-replay primitive inspired by aadi's Discord suggestion to qdee on May 18 — credit where due.
+
+---
+
+*Built by [Emerson Daniel (Majormaxx)](https://github.com/Majormaxx) — Jos, Nigeria. Agora Agents Hackathon.*

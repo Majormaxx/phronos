@@ -1,8 +1,12 @@
-# Environment
+# Environment — never commit secrets or local overrides
 .env
 .env.local
 .env.*.local
+.env.tmp.*
 !.env.example
+
+# Internal AI tooling config — not for public consumption
+CLAUDE.md
 
 # PRD and internal strategy docs — never push
 *_PRD.md

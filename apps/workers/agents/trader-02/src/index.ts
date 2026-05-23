@@ -1,0 +1,106 @@
+/**
+ * Trader-02: Mean Reversion
+ * Fades the 24h extremes — shorts the biggest gainers, longs the biggest losers.
+ */
+import { privateKeyToAccount } from "viem/accounts";
+import { keccak256, toHex, createWalletClient, http } from "viem";
+import { getPublicClient, getDeployedAddresses, arcTestnet } from "@phronos/shared";
+
+const AGENT_ID    = BigInt(process.env.TRADER_02_AGENT_ID ?? "19298");
+const PK          = (process.env.TRADER_02_PRIVATE_KEY ?? "") as `0x${string}`;
+const INTERVAL_MS = 25 * 60 * 1000;
+const WATCHLIST   = ["bitcoin", "ethereum", "solana", "binancecoin", "avalanche-2"];
+const SYMBOL_MAP: Record<string, string> = {
+  bitcoin: "BTC", ethereum: "ETH", solana: "SOL", binancecoin: "BNB", "avalanche-2": "AVAX",
+};
+
+const ROUTER_ABI = [{ name: "submitIntent", type: "function", inputs: [
+  { name: "intent", type: "tuple", components: [
+    { name: "erc8004Id", type: "uint256" }, { name: "venue", type: "uint8" },
+    { name: "marketId", type: "bytes32" }, { name: "notionalUSDC", type: "int256" },
+    { name: "validUntil", type: "uint64" }, { name: "nonce", type: "uint256" },
+    { name: "strategyHash", type: "bytes32" }, { name: "traceCID", type: "bytes32" },
+  ]},
+  { name: "operatorSig", type: "bytes" },
+], outputs: []}] as const;
+
+const INTENT_TYPES = {
+  Intent: [
+    { name: "erc8004Id",    type: "uint256" },
+    { name: "venue",        type: "uint8" },
+    { name: "marketId",     type: "bytes32" },
+    { name: "notionalUSDC", type: "int256" },
+    { name: "validUntil",   type: "uint64" },
+    { name: "nonce",        type: "uint256" },
+    { name: "strategyHash", type: "bytes32" },
+    { name: "traceCID",     type: "bytes32" },
+  ],
+} as const;
+
+async function fetchChanges(): Promise<Record<string, number>> {
+  try {
+    const ids = WATCHLIST.join(",");
+    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+    const data = await res.json() as Record<string, { usd_24h_change?: number }>;
+    return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.usd_24h_change ?? 0]));
+  } catch {
+    return { bitcoin: 1.2, ethereum: 0.8, solana: 2.1, binancecoin: 0.3, "avalanche-2": -0.5 };
+  }
+}
+
+let nonce = BigInt(Date.now());
+
+async function run(): Promise<void> {
+  if (!PK) return;
+  const { router } = getDeployedAddresses();
+  if (!router) return;
+
+  const changes  = await fetchChanges();
+  const entries  = Object.entries(changes).filter(([, c]) => Math.abs(c) >= 0.1);
+  const account  = privateKeyToAccount(PK);
+  const client   = getPublicClient();
+  const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http() });
+
+  for (const [coin, change] of entries) {
+    const symbol    = SYMBOL_MAP[coin] ?? coin.toUpperCase();
+    const direction = change > 0 ? -1 : 1;
+    const notional  = BigInt(Math.round(direction * 8_000_000));
+    const timestamp = Math.floor(Date.now() / 1000);
+    const traceHash = keccak256(toHex(JSON.stringify({ rationale: `Mean-revert ${symbol}: fading ${change.toFixed(2)}%`, timestamp })));
+    const intent = {
+      erc8004Id:    AGENT_ID,
+      venue:        0,
+      marketId:     keccak256(toHex(symbol)) as `0x${string}`,
+      notionalUSDC: notional,
+      validUntil:   BigInt(timestamp + 45 * 60),
+      nonce:        nonce++,
+      strategyHash: keccak256(toHex("phronos:strategy:mean-revert-24h-fade")) as `0x${string}`,
+      traceCID:     traceHash,
+    };
+
+    console.log(`[trader-02] ${direction > 0 ? "LONG" : "SHORT"} ${symbol} (fade ${change.toFixed(2)}%)`);
+
+    try {
+      const sig = await account.signTypedData({
+        domain: { name: "Phronos Router", version: "1", chainId: 5042002, verifyingContract: router },
+        types: INTENT_TYPES,
+        primaryType: "Intent",
+        message: intent,
+      });
+      const { request } = await client.simulateContract({
+        address: router, abi: ROUTER_ABI, functionName: "submitIntent",
+        args: [intent, sig], account,
+      });
+      const hash = await walletClient.writeContract(request);
+      console.log(`[trader-02] submitted tx=${hash}`);
+    } catch (err) { console.error(`[trader-02] ${symbol}:`, (err as Error).message?.slice(0, 200)); }
+  }
+}
+
+async function loop(): Promise<void> {
+  while (true) {
+    try { await run(); } catch (err) { console.error("[trader-02]", err); }
+    await new Promise((r) => setTimeout(r, INTERVAL_MS));
+  }
+}
+loop();

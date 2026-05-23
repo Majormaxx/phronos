@@ -6,11 +6,19 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/seed.ts",
+    "db:generate": "drizzle-kit generate"
+  },
   "dependencies": {
-    "drizzle-orm": "^0.30.0",
+    "@neondatabase/serverless": "^0.10.0",
+    "drizzle-orm": "^0.32.0",
     "postgres": "^3.4.0"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.21.0"
+    "drizzle-kit": "^0.21.0",
+    "tsx": "^4.7.0"
   }
 }

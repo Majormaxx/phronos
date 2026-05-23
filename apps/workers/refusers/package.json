@@ -1,0 +1,17 @@
+{
+  "name": "@phronos/refusers",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./llm_judgment": "./src/llm_judgment.ts",
+    "./macro_shift": "./src/macro_shift.ts",
+    "./whale_contradiction": "./src/whale_contradiction.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "@phronos/shared": "workspace:*",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": { "typescript": "^5.4.0" }
+}

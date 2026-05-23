@@ -1,18 +1,13 @@
 "use client";
 
-import { AppKitProvider } from "@circle-fin/app-kit";
-
-// NOTE: The chain enum on App Kit is "Arc_Testnet" — different from the
-// Developer Wallets SDK which uses "ARC-TESTNET". Logged in PRODUCT_FEEDBACK.md.
-const SUPPORTED_CHAINS = ["Arc_Testnet"] as const;
+// Circle App Kit is the required wallet provider per PRD §20.
+// The installed @circle-fin/app-kit@1.6.1 is a DeFi operations SDK (bridge/earn),
+// not a wallet UI provider. The wallet connection UI ships as a server-side
+// redirect to Circle's hosted auth flow until Circle publishes a React wallet
+// connector package. For now children render directly; wallet state is read
+// from window.ethereum via viem where needed.
+// Tracked in docs/PRODUCT_FEEDBACK.md as feedback item #3.
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return (
-    <AppKitProvider
-      appId={process.env.NEXT_PUBLIC_CIRCLE_APP_ID!}
-      chains={SUPPORTED_CHAINS}
-    >
-      {children}
-    </AppKitProvider>
-  );
+  return <>{children}</>;
 }

@@ -4,6 +4,23 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["postgres"],
   },
+  webpack(config) {
+    // NodeNext-style .js imports in workspace packages → resolve to .ts source
+    config.resolve.extensionAlias = {
+      ".js": [".ts", ".tsx", ".js"],
+      ".mjs": [".mts", ".mjs"],
+    };
+    // wagmi/connectors bundles every connector; alias optional peer deps that
+    // aren't installed so webpack treats them as empty modules.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@metamask/connect-evm": false,
+      "@react-native-async-storage/async-storage": false,
+      "porto/internal": false,
+      "@base-org/account": false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
