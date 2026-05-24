@@ -5,7 +5,7 @@
 Most copy-trading runs on faith. You follow someone because they claim a track record. There is no bond, no audit trail, no consequence for being wrong. Phronos changes the economics: every agent on the leaderboard posts real USDC — collateralized in USYC — and loses it proportionally when they underperform. That capital goes directly to the followers they failed.
 
 [▶ 3-minute demo](https://loom.com/share/placeholder)  
-[Live: phronos.xyz](https://phronos.xyz)  
+[Live: phronos.vercel.app](https://phronos.vercel.app)  
 [Arcscan — contracts](https://testnet.arcscan.app)
 
 ---
@@ -90,33 +90,33 @@ The database is a read projection of chain events only. Drop it, re-run the inde
 
 | Contract | Address | Arcscan |
 |---|---|---|
-| PhronosRegistry | `pending` | — |
-| PhronosBond | `pending` | — |
-| PhronosRouter | `pending` | — |
-| SlashOracle | `pending` | — |
+| PhronosRegistry | `0x93062850DE87aCCb381c51eA6fedf02fA96bbDD8` | [↗](https://testnet.arcscan.app/address/0x93062850DE87aCCb381c51eA6fedf02fA96bbDD8) |
+| PhronosBond | `0x0E94A382920f1Dae4A9dcb3677b1D65366cC1770` | [↗](https://testnet.arcscan.app/address/0x0E94A382920f1Dae4A9dcb3677b1D65366cC1770) |
+| PhronosRouter | `0x7988558ed4B654cFc3D89C352b41053ac1d14e3F` | [↗](https://testnet.arcscan.app/address/0x7988558ed4B654cFc3D89C352b41053ac1d14e3F) |
+| SlashOracle | `0xC2efB71f4C6cEEF3bf6BCddDB27e8DC50D8484A0` | [↗](https://testnet.arcscan.app/address/0xC2efB71f4C6cEEF3bf6BCddDB27e8DC50D8484A0) |
 
 | Agent | Strategy | ERC-8004 ID | Bond |
 |---|---|---|---|
-| Momentum | Buys 24h top performers | 18146 | 2 USDC |
-| Mean Reversion | Fades 24h extremes | pending | 2 USDC |
-| Funding Rate | Trades Hyperliquid funding skew | pending | 2 USDC |
-| Random Walk | Stochastic noise (the bad actor) | pending | 2 USDC |
+| Momentum | Buys 24h top performers | 19297 | 2 USDC |
+| Mean Reversion | Fades 24h extremes | 19298 | 2 USDC |
+| Funding Rate | Trades Hyperliquid funding skew | 19299 | 2 USDC |
+| Random Walk | Stochastic noise (the bad actor) | 19300 | 2 USDC |
 
 ---
 
 ## Traction
 
-*Updated at submission — 2026-05-25*
+*Updated May 23, 2026 — live at [phronos.vercel.app/api/stats](https://phronos.vercel.app/api/stats)*
 
 | Metric | Count |
 |---|---|
-| Unique follower wallets (on-chain deposits) | — |
-| Copy trades executed | — |
-| Policy refusals emitted | — |
-| Slash events | — |
-| MCP queries | — |
+| Registered agents (on-chain) | 4 |
+| Follower wallets with escrow | 1 |
+| Copy trades executed (on-chain) | 22 |
+| Policy refusals emitted | 0 |
+| Slash events | 2 |
 
-[Twitter slash-watch thread →](https://twitter.com/placeholder)
+Slash demo tx: [`0xae4a038...`](https://testnet.arcscan.app/tx/0xae4a03817583b037fb371a8d4df4f9b46b4042a446dc33b553b3352e288708c8)
 
 ---
 
