@@ -48,14 +48,16 @@ Refuse only if there are obvious problems: sizing wildly inappropriate, strategy
 
     const blob  = JSON.stringify({ refuser: "llm_judgment", ...parsed, timestamp: Date.now() });
     const result: RefuserResult = {
-      allow:     parsed.allow,
-      reason:    parsed.reason,
+      allow:      parsed.allow,
+      reason:     parsed.reason,
       reasonCode: 1,
-      reasonCID: keccak256(toHex(blob)),
+      reasonCID:  keccak256(toHex(blob)),
     };
     cache.set(cacheKey, result);
     return result;
-  } catch {
-    return { allow: true, reason: "llm_judgment unavailable — defaulting to allow", reasonCode: 1, reasonCID: "0x0000000000000000000000000000000000000000000000000000000000000000" };
+  } catch (err) {
+    const fallbackReason = `llm_judgment unavailable — defaulting to allow (${(err as Error).message?.slice(0, 80)})`;
+    const fallbackBlob   = JSON.stringify({ refuser: "llm_judgment", allow: true, reason: fallbackReason, timestamp: Date.now() });
+    return { allow: true, reason: fallbackReason, reasonCode: 1, reasonCID: keccak256(toHex(fallbackBlob)) };
   }
 }

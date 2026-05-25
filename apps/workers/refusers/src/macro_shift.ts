@@ -67,10 +67,12 @@ export async function macroShift(intent: IntentContext): Promise<RefuserResult> 
     return { allow: false, reason, reasonCode: 2, reasonCID: keccak256(toHex(blob)) };
   }
 
+  const allowReason = `Macro stable: BTC funding ${(current * 100).toFixed(4)}% at ${zscore.toFixed(1)}σ (mean=${(stats.mean * 100).toFixed(4)}%, source=${stats.source})`;
+  const allowBlob   = JSON.stringify({ refuser: "macro_shift", allow: true, reason: allowReason, zscore, current, mean: stats.mean, stddev, timestamp: Date.now() });
   return {
     allow: true,
-    reason: `Macro stable: BTC funding ${(current * 100).toFixed(4)}% at ${zscore.toFixed(1)}σ (mean=${(stats.mean * 100).toFixed(4)}%, source=${stats.source})`,
+    reason: allowReason,
     reasonCode: 2,
-    reasonCID: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    reasonCID: keccak256(toHex(allowBlob)),
   };
 }

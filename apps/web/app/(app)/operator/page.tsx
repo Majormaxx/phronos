@@ -3,14 +3,21 @@ import { eq, desc } from "drizzle-orm";
 import { arcscanAddress, getDeployedAddresses } from "@phronos/shared";
 import Link from "next/link";
 
-const OPERATOR = "0x1BD759e9a1D70ce5F4f14e4D0501ffFdf534350E";
-
 const AGENT_NAMES: Record<number, string> = {
   19297: "Momentum", 19298: "Mean Reversion", 19299: "Funding Rate", 19300: "Random Walk",
 };
 
 export default async function OperatorPage() {
-  const { registry: registryAddr, router: routerAddr } = getDeployedAddresses();
+  const { registry: registryAddr, router: routerAddr, operator: OPERATOR } = getDeployedAddresses();
+
+  if (!OPERATOR) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-10">
+        <h1 className="font-display text-5xl mb-4">Operator</h1>
+        <p className="text-ink/40 text-sm">OPERATOR_ADDRESS not configured.</p>
+      </div>
+    );
+  }
 
   const allAgents = await db().select().from(agents).where(eq(agents.operatorAddr, OPERATOR));
 

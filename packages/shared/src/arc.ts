@@ -45,6 +45,7 @@ export function getDeployedAddresses() {
     router:      (process.env.PHRONOS_ROUTER_ADDR      ?? "") as `0x${string}`,
     slashOracle: (process.env.SLASH_ORACLE_ADDR        ?? "") as `0x${string}`,
     mockUsyc:    (process.env.MOCK_USYC_ADDR           ?? "") as `0x${string}`,
+    operator:    (process.env.OPERATOR_ADDRESS         ?? "") as `0x${string}`,
   };
 }
 

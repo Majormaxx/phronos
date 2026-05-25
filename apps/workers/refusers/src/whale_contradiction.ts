@@ -49,10 +49,12 @@ export async function whaleContradiction(intent: IntentContext): Promise<Refuser
     return { allow: false, reason, reasonCode: 3, reasonCID: keccak256(toHex(blob)) };
   }
 
+  const allowReason = `No whale contradiction on ${symbol} (net whale pos=${whaleNet.toFixed(2)})`;
+  const allowBlob   = JSON.stringify({ refuser: "whale_contradiction", allow: true, reason: allowReason, symbol, whaleNet, timestamp: Date.now() });
   return {
     allow: true,
-    reason: `No whale contradiction on ${symbol}`,
+    reason: allowReason,
     reasonCode: 3,
-    reasonCID: "0x0000000000000000000000000000000000000000000000000000000000000000",
+    reasonCID: keccak256(toHex(allowBlob)),
   };
 }

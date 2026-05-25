@@ -107,11 +107,18 @@ async function processIntent(log: {
       continue;
     }
 
-    // Execute copy — Arc mock swap (P0): record a synthetic receipt
+    // Execute copy — Arc mock swap (P0): receipt is content-addressed copy record anchored to current block
     const followerNotional = notionalUSDC! / 10n; // scale down for demo
-    const venueReceiptHash = keccak256(toHex(JSON.stringify({
-      intentHash, followerAddr, followerNotional: followerNotional.toString(), timestamp: Date.now()
-    })));
+    const blockNumber      = await client.getBlockNumber().catch(() => 0n);
+    const receiptBlob      = JSON.stringify({
+      venue:             "arc-mock-swap-v0",
+      chainId:           5042002,
+      intentHash,
+      followerAddr,
+      followerNotional:  followerNotional.toString(),
+      blockNumber:       blockNumber.toString(),
+    });
+    const venueReceiptHash = keccak256(toHex(receiptBlob));
 
     console.log(`[router] COPY follower=${followerAddr.slice(0,8)} notional=${followerNotional}`);
     try {
