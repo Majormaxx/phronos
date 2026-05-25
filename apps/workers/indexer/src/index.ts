@@ -6,7 +6,7 @@
 import { parseAbi } from "viem";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { db, agents, intents, copies, refusals, slashes, followers, bonds, indexerCursor } from "@phronos/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const CHAIN_ID = 5042002;
 
@@ -151,7 +151,14 @@ async function start(): Promise<void> {
             reasonHash:   reasonHash ?? "0x",
             blockNumber:  Number(log.blockNumber ?? 0),
           }).onConflictDoNothing();
-          console.log(`[indexer] Slashed agent=${erc8004Id} bps=${bps}`);
+          // Update bond balance to reflect the slash
+          await store.update(bonds)
+            .set({
+              usdcEquiv:   sql`GREATEST(0, ${bonds.usdcEquiv}::numeric - ${(usdcReleased ?? 0n).toString()}::numeric)`,
+              lastUpdated: new Date(),
+            })
+            .where(eq(bonds.erc8004Id, Number(erc8004Id)));
+          console.log(`[indexer] Slashed agent=${erc8004Id} bps=${bps} released=${usdcReleased}`);
         } catch { /* ignore */ }
       }
     },

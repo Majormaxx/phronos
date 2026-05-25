@@ -1,21 +1,38 @@
 import Link from "next/link";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 
-const STATS = [
-  { label: "Agents bonded", value: "4" },
-  { label: "USDC in bonds", value: "$8" },
-  { label: "Policy refusers", value: "3" },
-  { label: "On-chain traces", value: "100%" },
-];
+const AGENT_NAMES: Record<number, { name: string; strategy: string }> = {
+  19297: { name: "Momentum",      strategy: "24h top performers" },
+  19298: { name: "Mean Reversion",strategy: "Fades 24h extremes" },
+  19299: { name: "Funding Rate",  strategy: "Hyperliquid skew trader" },
+  19300: { name: "Random Walk",   strategy: "Stochastic (bad actor)" },
+};
 
-const AGENTS = [
-  { name: "Momentum",      strategy: "24h top performers",      id: "19297", sharpe: "+1.24" },
-  { name: "Mean Reversion",strategy: "Fades 24h extremes",      id: "19298", sharpe: "+0.61" },
-  { name: "Funding Rate",  strategy: "Hyperliquid skew trader", id: "19299", sharpe: "+0.38" },
-  { name: "Random Walk",   strategy: "Stochastic (bad actor)",  id: "19300", sharpe: "−1.87" },
-];
+async function getLiveData() {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  try {
+    const [lbRes, statsRes] = await Promise.all([
+      fetch(`${base}/api/leaderboard`, { next: { revalidate: 60 } }),
+      fetch(`${base}/api/stats`,       { next: { revalidate: 60 } }),
+    ]);
+    const leaderboard = lbRes.ok ? await lbRes.json() : [];
+    const stats       = statsRes.ok ? await statsRes.json() : {};
+    return { leaderboard, stats };
+  } catch {
+    return { leaderboard: [], stats: {} };
+  }
+}
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const { leaderboard, stats } = await getLiveData();
+
+  const totalBondUsdc = leaderboard.reduce((sum: number, a: { bondUsdc: string }) => sum + Number(a.bondUsdc) / 1e6, 0);
+  const STATS = [
+    { label: "Agents bonded",   value: String(stats.agents ?? 4) },
+    { label: "USDC in bonds",   value: `$${totalBondUsdc.toFixed(2) || "8"}` },
+    { label: "Copy trades",     value: String(stats.copies ?? 0) },
+    { label: "Slash events",    value: String(stats.slashes ?? 0) },
+  ];
   return (
     <main className="min-h-screen flex flex-col bg-parchment">
       {/* Nav */}
@@ -61,21 +78,25 @@ export default function LandingPage() {
               Live bench
             </p>
             <div className="border border-ink/10 divide-y divide-ink/5">
-              {AGENTS.map((a) => (
-                <Link
-                  key={a.id}
-                  href={`/agent/${a.id}`}
-                  className="flex items-center justify-between px-4 py-3 hover:bg-ink/3 transition-colors group"
-                >
-                  <div>
-                    <p className="text-sm font-medium group-hover:text-terracotta transition-colors">{a.name}</p>
-                    <p className="text-xs text-ink/40">{a.strategy}</p>
-                  </div>
-                  <span className={`text-xs font-mono tabular-nums ${a.sharpe.startsWith("−") ? "text-terracotta" : "text-olive"}`}>
-                    {a.sharpe}
-                  </span>
-                </Link>
-              ))}
+              {leaderboard.map((a: { erc8004Id: number; sharpe7d: number }) => {
+                const meta = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, strategy: "" };
+                const sharpeStr = a.sharpe7d >= 0 ? `+${a.sharpe7d.toFixed(2)}` : a.sharpe7d.toFixed(2);
+                return (
+                  <Link
+                    key={a.erc8004Id}
+                    href={`/agent/${a.erc8004Id}`}
+                    className="flex items-center justify-between px-4 py-3 hover:bg-ink/3 transition-colors group"
+                  >
+                    <div>
+                      <p className="text-sm font-medium group-hover:text-terracotta transition-colors">{meta.name}</p>
+                      <p className="text-xs text-ink/40">{meta.strategy}</p>
+                    </div>
+                    <span className={`text-xs font-mono tabular-nums ${a.sharpe7d < 0 ? "text-terracotta" : "text-olive"}`}>
+                      {sharpeStr}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
             <p className="text-xs text-ink/30 mt-2 font-mono">7d Sharpe · updates every 15 min</p>
           </div>
