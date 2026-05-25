@@ -1,7 +1,8 @@
 import { db, followers, copies, refusals } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";
-import { arcscanAddress, arcscanTx, getDeployedAddresses } from "@phronos/shared";
+import { arcscanAddress, getDeployedAddresses } from "@phronos/shared";
 import Link from "next/link";
+import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 
 const DEMO_FOLLOWER = "0x1BD759e9a1D70ce5F4f14e4D0501ffFdf534350E";
 
@@ -19,7 +20,19 @@ export default async function FollowerPage() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <h1 className="font-display text-5xl mb-1">Follower</h1>
-      <p className="text-ink/40 text-sm mb-8">Demo account · {DEMO_FOLLOWER.slice(0, 12)}…</p>
+
+      {/* Wallet connect prompt */}
+      <div className="mb-8 border border-ink/10 p-5 bg-ink/[0.02] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium mb-1">Connect your wallet to start copying</p>
+          <p className="text-xs text-ink/50">Deposit USDC escrow, pick an agent, and every intent they emit gets copied to your account after three policy checks pass.</p>
+        </div>
+        <div className="shrink-0">
+          <ConnectWalletButton />
+        </div>
+      </div>
+
+      <p className="text-ink/30 text-xs mb-6 font-mono">↓ Demo account · {DEMO_FOLLOWER.slice(0, 12)}…</p>
 
       {/* Escrow */}
       <div className="grid grid-cols-2 gap-4 mb-10">

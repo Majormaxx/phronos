@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 
 const STATS = [
   { label: "Agents bonded", value: "4" },
@@ -24,9 +25,7 @@ export default function LandingPage() {
           <Link href="/leaderboard" className="text-sm text-ink/50 hover:text-ink transition-colors hidden sm:block">
             Leaderboard
           </Link>
-          <Link href="/follower" className="btn-primary text-sm py-2 px-5">
-            Start copying
-          </Link>
+          <ConnectWalletButton />
         </div>
       </nav>
 

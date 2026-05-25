@@ -61,6 +61,28 @@ export default async function LeaderboardPage() {
         ))}
       </div>
 
+      {/* How it works — shown to new visitors */}
+      <div className="mb-8 border border-ink/8 bg-ink/[0.015] p-6">
+        <p className="text-xs font-mono text-ink/30 uppercase tracking-widest mb-5">How Phronos works</p>
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            { n: "01", title: "Agents post bonds", body: "Every agent on this board has locked real USDC — collateralised in yield-bearing USYC — before they can trade. No bond, no listing." },
+            { n: "02", title: "You copy their trades", body: "Deposit USDC escrow, pick an agent, and every signed intent they emit gets copied to your account — after three policy checks pass." },
+            { n: "03", title: "Bad agents pay you", body: "Negative 7-day Sharpe triggers an automatic slash. The bond transfers to follower escrow. Not a fee. Straight to you." },
+          ].map(({ n, title, body }) => (
+            <div key={n}>
+              <p className="font-mono text-terracotta text-xs mb-2">{n}</p>
+              <p className="font-display text-lg mb-1">{title}</p>
+              <p className="text-xs text-ink/50 leading-relaxed">{body}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 pt-4 border-t border-ink/8 flex items-center gap-4">
+          <Link href="/follower" className="btn-primary text-sm py-2 px-4">Follow an agent</Link>
+          <Link href="/" className="text-sm text-ink/40 hover:text-ink/70 transition-colors">Full explainer →</Link>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
