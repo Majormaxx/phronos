@@ -1,39 +1,75 @@
 import { keccak256, toHex } from "viem";
 import type { IntentContext, RefuserResult } from "./llm_judgment.js";
 
-// Baseline VIX-proxy: BTC annualised vol from recent funding rates.
-// In production this would come from Pyth. For testnet we use Hyperliquid funding spread.
-const BASELINE_FUNDING  = 0.00008; // 0.008% — typical calm funding
-const SHIFT_THRESHOLD   = 2.0;     // 2σ
+// 2σ above the rolling 24h mean triggers a macro-shift refusal
+const SHIFT_SIGMA = 2.0;
+
+// Static fallback only used if Hyperliquid is completely unreachable
+const STATIC_BASELINE = 0.00008;
+const STATIC_STDDEV   = 0.00004;
+
+interface FundingStats {
+  mean:    number;
+  stddev:  number;
+  samples: number;
+  source:  "live" | "static-fallback";
+}
+
+async function fetchFundingStats24h(): Promise<FundingStats> {
+  const startTime = Date.now() - 24 * 60 * 60 * 1000;
+  const res = await fetch("https://api.hyperliquid.xyz/info", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ type: "fundingHistory", coin: "BTC", startTime }),
+    signal:  AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`Hyperliquid fundingHistory ${res.status}`);
+  const rows = await res.json() as Array<{ fundingRate: string; time: number }>;
+  if (!rows.length) throw new Error("fundingHistory returned empty");
+
+  const rates = rows.map(r => Math.abs(parseFloat(r.fundingRate)));
+  const mean  = rates.reduce((a, b) => a + b, 0) / rates.length;
+  const variance = rates.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / rates.length;
+  return { mean, stddev: Math.sqrt(variance), samples: rates.length, source: "live" };
+}
 
 async function fetchCurrentFunding(): Promise<number> {
-  try {
-    const res = await fetch("https://api.hyperliquid.xyz/info", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "metaAndAssetCtxs" }),
-    });
-    const data = await res.json() as [unknown, Array<{ funding: string }>];
-    const btcFunding = parseFloat(data[1]?.[0]?.funding ?? "0");
-    return Math.abs(btcFunding);
-  } catch {
-    return BASELINE_FUNDING;
-  }
+  const res = await fetch("https://api.hyperliquid.xyz/info", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ type: "metaAndAssetCtxs" }),
+    signal:  AbortSignal.timeout(6000),
+  });
+  if (!res.ok) throw new Error(`Hyperliquid metaAndAssetCtxs ${res.status}`);
+  const data = await res.json() as [unknown, Array<{ funding: string }>];
+  return Math.abs(parseFloat(data[1]?.[0]?.funding ?? "0"));
 }
 
 export async function macroShift(intent: IntentContext): Promise<RefuserResult> {
-  const current   = await fetchCurrentFunding();
-  const deviation = (current - BASELINE_FUNDING) / BASELINE_FUNDING;
+  let stats: FundingStats;
+  let current: number;
 
-  if (deviation > SHIFT_THRESHOLD) {
-    const reason = `Macro shift detected: BTC funding ${(current * 100).toFixed(4)}% vs baseline ${(BASELINE_FUNDING * 100).toFixed(4)}% (${deviation.toFixed(1)}σ)`;
-    const blob   = JSON.stringify({ refuser: "macro_shift", reason, deviation, timestamp: Date.now() });
+  try {
+    [stats, current] = await Promise.all([fetchFundingStats24h(), fetchCurrentFunding()]);
+  } catch (err) {
+    console.warn("[macro_shift] Hyperliquid unavailable, using static baseline:", (err as Error).message);
+    // Fall back to static values — still functional, just less precise
+    stats   = { mean: STATIC_BASELINE, stddev: STATIC_STDDEV, samples: 0, source: "static-fallback" };
+    try { current = await fetchCurrentFunding(); } catch { current = STATIC_BASELINE; }
+  }
+
+  const stddev = stats.stddev > 0 ? stats.stddev : STATIC_STDDEV;
+  const zscore = (current - stats.mean) / stddev;
+
+  if (zscore > SHIFT_SIGMA) {
+    const reason = `Macro shift: BTC funding ${(current * 100).toFixed(4)}% is ${zscore.toFixed(1)}σ above 24h mean ${(stats.mean * 100).toFixed(4)}% (n=${stats.samples}, source=${stats.source})`;
+    const blob   = JSON.stringify({ refuser: "macro_shift", reason, zscore, current, mean: stats.mean, stddev, timestamp: Date.now() });
     return { allow: false, reason, reasonCode: 2, reasonCID: keccak256(toHex(blob)) };
   }
 
   return {
     allow: true,
-    reason: `Macro stable: funding at ${(current * 100).toFixed(4)}%`,
+    reason: `Macro stable: BTC funding ${(current * 100).toFixed(4)}% at ${zscore.toFixed(1)}σ (mean=${(stats.mean * 100).toFixed(4)}%, source=${stats.source})`,
     reasonCode: 2,
     reasonCID: "0x0000000000000000000000000000000000000000000000000000000000000000",
   };

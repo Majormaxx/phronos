@@ -46,16 +46,16 @@ const INTENT_TYPES = {
   ],
 } as const;
 
-async function fetchChanges(): Promise<Record<string, number>> {
-  try {
-    const ids = WATCHLIST.join(",");
-    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
-    if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
-    const data = await res.json() as Record<string, { usd_24h_change?: number }>;
-    return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.usd_24h_change ?? 0]));
-  } catch {
-    return { bitcoin: 1.2, ethereum: 0.8, solana: 2.1, binancecoin: 0.3, "avalanche-2": -0.5 };
-  }
+async function fetchChanges(): Promise<Record<string, number> | null> {
+  const ids = WATCHLIST.join(",");
+  const res = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
+    { signal: AbortSignal.timeout(8000) }
+  );
+  if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
+  const data = await res.json() as Record<string, { usd_24h_change?: number }>;
+  if (!data.bitcoin) throw new Error("CoinGecko returned empty data");
+  return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.usd_24h_change ?? 0]));
 }
 
 let nonce = BigInt(Date.now());
@@ -65,7 +65,15 @@ async function run(): Promise<void> {
   const { router } = getDeployedAddresses();
   if (!router) { console.warn("[trader-01] PHRONOS_ROUTER_ADDR not set"); return; }
 
-  const changes = await fetchChanges();
+  let changes: Record<string, number>;
+  try {
+    const result = await fetchChanges();
+    if (!result) { console.warn("[trader-01] CoinGecko returned no data — skipping cycle"); return; }
+    changes = result;
+  } catch (err) {
+    console.warn("[trader-01] CoinGecko fetch failed — skipping cycle:", (err as Error).message);
+    return;
+  }
   const sorted  = Object.entries(changes).sort(([, a], [, b]) => b - a);
   const top3    = sorted.slice(0, 3);
 
