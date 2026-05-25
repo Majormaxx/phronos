@@ -72,11 +72,11 @@ is not enforced, allowing an attacker to re-execute old intents and trigger stal
 or its price data feed is manipulated.
 
 **Mitigations in place:**
-- The keeper uses public market data (Pyth price feed stubs for the hackathon). Real Pyth integration will use signed price attestations.
+- The keeper fetches real BTC hourly price history from CoinGecko and retrieves block timestamps via `eth_getBlockByNumber` to compute genuine PnL per intent. Sharpe = (mean(returns) / std(returns)) × √252. Falls back to direction-only Sharpe if CoinGecko is unavailable.
 - The `KEEPER_ROLE` holder can be rotated by `DEFAULT_ADMIN_ROLE` without redeploying.
 - `SlashEvaluated` event includes `sharpeAtEval` — any evaluation with an implausible Sharpe value is visible on-chain and can be challenged.
 
-**Residual risk:** Keeper Sharpe computation uses `Math.random()` seeded from `marketId` as a price stub (`apps/workers/keeper/src/index.ts`). This must be replaced with real Pyth attestations before mainnet.
+**Residual risk:** CoinGecko free tier has rate limits and no signed price attestations. In production this should be replaced with Pyth price feed attestations, which are signed by validators and verifiable on-chain.
 
 ---
 
