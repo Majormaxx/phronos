@@ -54,12 +54,23 @@ async function processIntent(log: {
   }
 
   const { router } = getDeployedAddresses();
-  const marketSummary = `intent notional=${notionalUSDC} venue=${venue ?? 0}`;
+
+  // IntentSubmitted event has no marketId field — infer from known agent strategies
+  const AGENT_MARKET: Record<string, string> = {
+    "19297": "BTC", // Momentum
+    "19298": "BTC", // Mean Reversion
+    "19299": "ETH", // Funding Rate
+    "19300": "BTC", // Random Walk
+  };
+  const marketSymbol = AGENT_MARKET[erc8004Id.toString()] ?? "BTC";
+  const direction    = notionalUSDC >= 0n ? "LONG" : "SHORT";
+  const marketSummary = `${direction} ${marketSymbol} notional=${notionalUSDC} venue=${venue ?? 0} agent=${erc8004Id}`;
+
   const intentCtx = {
-    erc8004Id: erc8004Id.toString(),
-    marketId:  intentHash.slice(0, 20),
+    erc8004Id:    erc8004Id.toString(),
+    marketId:     marketSymbol,
     notionalUSDC: notionalUSDC.toString(),
-    venue:     venue ?? 0,
+    venue:        venue ?? 0,
   };
 
   if (DRY_RUN) {
