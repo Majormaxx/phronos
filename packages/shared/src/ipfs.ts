@@ -1,34 +1,47 @@
 import { keccak256, toHex } from "viem";
 
-const W3S_URL = "https://api.web3.storage/upload";
+const PINATA_URL = "https://api.pinata.cloud/pinning/pinJSONToIPFS";
+const GATEWAY    = "https://gateway.pinata.cloud/ipfs";
 
 /**
- * Pins a JSON string to IPFS via web3.storage.
- * Returns { cid, traceHash } where traceHash is keccak256(json) — the on-chain anchor key.
+ * Pins a JSON string to IPFS via Pinata.
+ * Returns { cid, traceHash } where:
+ *   cid        = IPFS CIDv1 (bafkrei...) for off-chain retrieval
+ *   traceHash  = keccak256(json) — the bytes32 anchored on-chain as traceCID
+ *
+ * If PINATA_JWT is not set, skips pinning and returns only the keccak256 hash
+ * so agents can still function without IPFS configured.
  */
-export async function pinJson(json: string): Promise<{ cid: string; traceHash: `0x${string}` }> {
-  const token = process.env.WEB3_STORAGE_TOKEN;
-  if (!token) throw new Error("WEB3_STORAGE_TOKEN not set");
+export async function pinJson(json: string): Promise<{ cid: string | null; traceHash: `0x${string}` }> {
+  const traceHash = keccak256(toHex(json));
+  const token = process.env.PINATA_JWT;
+  if (!token) {
+    console.warn("[ipfs] PINATA_JWT not set — skipping IPFS pin, using keccak256 only");
+    return { cid: null, traceHash };
+  }
 
-  const res = await fetch(W3S_URL, {
-    method: "POST",
+  const res = await fetch(PINATA_URL, {
+    method:  "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "Content-Type":  "application/json",
     },
-    body: json,
+    body: JSON.stringify({
+      pinataContent:  JSON.parse(json),
+      pinataMetadata: { name: `phronos-trace-${Date.now()}` },
+    }),
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`IPFS pin failed: ${res.status} ${text}`);
+    throw new Error(`IPFS pin failed: ${res.status} ${text.slice(0, 200)}`);
   }
 
-  const data = (await res.json()) as { cid: string };
-  const traceHash = keccak256(toHex(json));
-  return { cid: data.cid, traceHash };
+  const data = await res.json() as { IpfsHash: string };
+  return { cid: data.IpfsHash, traceHash };
 }
 
 export function resolveUrl(cid: string): string {
-  return `https://w3s.link/ipfs/${cid}`;
+  return `${GATEWAY}/${cid}`;
 }

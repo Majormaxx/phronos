@@ -4,7 +4,8 @@
  */
 import { privateKeyToAccount } from "viem/accounts";
 import { keccak256, toHex, createWalletClient, http } from "viem";
-import { getPublicClient, getDeployedAddresses, arcTestnet } from "@phronos/shared";
+import { getPublicClient, getDeployedAddresses, arcTestnet, pinJson } from "@phronos/shared";
+import { db, traces } from "@phronos/db";
 
 const AGENT_ID    = BigInt(process.env.TRADER_03_AGENT_ID ?? "19299");
 const PK          = (process.env.TRADER_03_PRIVATE_KEY ?? "") as `0x${string}`;
@@ -67,7 +68,30 @@ async function run(): Promise<void> {
     const notional  = BigInt(Math.round(direction * 10_000_000));
     const timestamp = Math.floor(Date.now() / 1000);
     const rationale = `${symbol} funding=${(funding * 100).toFixed(4)}% — fade crowded ${funding > 0 ? "longs" : "shorts"}`;
-    const traceHash = keccak256(toHex(JSON.stringify({ rationale, timestamp })));
+
+    const traceJson = JSON.stringify({
+      schemaVersion: "trace/1.0",
+      agentId:       AGENT_ID.toString(),
+      strategy:      "funding-rate-hl",
+      marketId:      symbol,
+      notionalUSDC:  notional.toString(),
+      direction:     direction > 0 ? "LONG" : "SHORT",
+      rationale,
+      fundingRate:   funding,
+      timestamp,
+    });
+
+    let traceHash: `0x${string}`;
+    let ipfsCid: string | null = null;
+    try {
+      const pinResult = await pinJson(traceJson);
+      traceHash = pinResult.traceHash;
+      ipfsCid   = pinResult.cid;
+      if (ipfsCid) console.log(`[trader-03] trace pinned cid=${ipfsCid}`);
+    } catch (err) {
+      console.warn("[trader-03] IPFS pin failed:", (err as Error).message);
+      traceHash = keccak256(toHex(traceJson));
+    }
 
     const intent = {
       erc8004Id:    AGENT_ID,
@@ -95,6 +119,12 @@ async function run(): Promise<void> {
       });
       const hash = await walletClient.writeContract(request);
       console.log(`[trader-03] submitted tx=${hash}`);
+      if (ipfsCid) {
+        await db().insert(traces).values({
+          traceCid: ipfsCid, intentHash: traceHash, agentId: Number(AGENT_ID),
+          contentHash: traceHash, pinnedAt: new Date(),
+        }).onConflictDoNothing().catch(() => {});
+      }
     } catch (err) { console.error(`[trader-03] ${symbol}:`, (err as Error).message?.slice(0, 200)); }
   }
 }

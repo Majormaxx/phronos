@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { db, intents, copies, agents } from "@phronos/db";
+import { db, intents, copies, agents, traces } from "@phronos/db";
 import { eq } from "drizzle-orm";
-import { arcscanAddress } from "@phronos/shared";
+import { arcscanAddress, resolveUrl } from "@phronos/shared";
 import { notFound } from "next/navigation";
 
 const AGENT_NAMES: Record<number, string> = {
@@ -23,8 +23,12 @@ export default async function TracePage({ params }: { params: { hash: string } }
   const intent = intentRows[0];
   if (!intent) notFound();
 
-  const agentRows = await db().select().from(agents).where(eq(agents.erc8004Id, intent.erc8004Id)).limit(1);
-  const agent = agentRows[0];
+  const [agentRows, traceRows] = await Promise.all([
+    db().select().from(agents).where(eq(agents.erc8004Id, intent.erc8004Id)).limit(1),
+    db().select().from(traces).where(eq(traces.intentHash, intent.traceCid)).limit(1),
+  ]);
+  const agent    = agentRows[0];
+  const ipfsCid  = traceRows[0]?.traceCid ?? null;
 
   const isLong = Number(intent.notionalUsdc) >= 0;
 
@@ -68,9 +72,20 @@ export default async function TracePage({ params }: { params: { hash: string } }
       {/* Trace */}
       <h2 className="font-display text-2xl mb-3">Replay trace</h2>
       <div className="card mb-10 space-y-3 text-xs font-mono">
-        <div className="flex justify-between">
-          <span className="text-ink/40">Trace CID</span>
-          <span className="text-ink/80 break-all text-right ml-4">{intent.traceCid}</span>
+        <div className="flex justify-between items-start">
+          <span className="text-ink/40 shrink-0">Trace CID</span>
+          {ipfsCid ? (
+            <a
+              href={resolveUrl(ipfsCid)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-terracotta hover:underline break-all text-right ml-4"
+            >
+              {ipfsCid} ↗
+            </a>
+          ) : (
+            <span className="text-ink/80 break-all text-right ml-4">{intent.traceCid}</span>
+          )}
         </div>
         <div className="flex justify-between">
           <span className="text-ink/40">Strategy hash</span>
