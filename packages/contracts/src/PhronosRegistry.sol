@@ -30,6 +30,7 @@ contract PhronosRegistry is AccessControl, Pausable {
     uint256 private _agentCount;
 
     event AgentRegistered(uint256 indexed erc8004Id, address indexed operator, string agentCardCID);
+    event OperatorUpdated(uint256 indexed erc8004Id, address indexed oldOperator, address indexed newOperator);
     event StrategySpecUpdated(uint256 indexed erc8004Id, string oldCID, string newCID);
     event AgentSuspended(uint256 indexed erc8004Id, bytes32 reasonHash);
     event AgentReinstated(uint256 indexed erc8004Id);
@@ -71,6 +72,16 @@ contract PhronosRegistry is AccessControl, Pausable {
         _agentCount++;
 
         emit AgentRegistered(erc8004Id, msg.sender, agentCardCID);
+    }
+
+    /// @notice Transfer the signing operator role to a new address (e.g. a Circle DCW wallet).
+    /// Must be called by the current operator.
+    function updateOperator(uint256 erc8004Id, address newOperator) external {
+        AgentInfo storage a = _agents[erc8004Id];
+        if (a.activeSince == 0) revert AgentNotRegistered(erc8004Id);
+        if (a.operator != msg.sender) revert UnauthorizedOperator(erc8004Id);
+        emit OperatorUpdated(erc8004Id, a.operator, newOperator);
+        a.operator = newOperator;
     }
 
     function updateStrategySpec(uint256 erc8004Id, string calldata newCID) external {

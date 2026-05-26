@@ -4,7 +4,7 @@
  */
 import { privateKeyToAccount } from "viem/accounts";
 import { keccak256, toHex, createWalletClient, http } from "viem";
-import { getPublicClient, getDeployedAddresses, arcTestnet, pinJson } from "@phronos/shared";
+import { getPublicClient, getDeployedAddresses, arcTestnet, pinJson, getAgentWallet, dcwSignTypedData, type DCWWallet } from "@phronos/shared";
 import { db, traces } from "@phronos/db";
 
 const AGENT_ID     = BigInt(process.env.TRADER_01_AGENT_ID ?? "19297");
@@ -78,6 +78,13 @@ async function run(): Promise<void> {
   const sorted  = Object.entries(changes).sort(([, a], [, b]) => b - a);
   const top3    = sorted.slice(0, 3);
 
+  // Try Circle DCW — falls back to local private key if not configured
+  let dcwWallet: DCWWallet | null = null;
+  try {
+    dcwWallet = await getAgentWallet(1);
+    if (dcwWallet) console.log(`[trader-01] Circle DCW wallet: ${dcwWallet.address}`);
+  } catch { /* non-fatal */ }
+
   const account      = privateKeyToAccount(PK);
   const client       = getPublicClient();
   const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http() });
@@ -125,12 +132,27 @@ async function run(): Promise<void> {
     console.log(`[trader-01] ${change > 0 ? "LONG" : "SHORT"} ${symbol} change=${change.toFixed(2)}%`);
 
     try {
-      const sig = await account.signTypedData({
-        domain: { name: "Phronos Router", version: "1", chainId: 5042002, verifyingContract: router },
-        types: INTENT_TYPES,
-        primaryType: "Intent",
-        message: intent,
-      });
+      // Prefer Circle DCW signing (MPC-secured); fall back to local private key
+      const domain = { name: "Phronos Router", version: "1", chainId: 5042002, verifyingContract: router } as const;
+      let sig: `0x${string}`;
+      if (dcwWallet) {
+        const dcwSig = await dcwSignTypedData({
+          walletId:    dcwWallet.walletId,
+          domain,
+          types:       INTENT_TYPES,
+          primaryType: "Intent",
+          message:     intent as Record<string, unknown>,
+        });
+        if (dcwSig) {
+          sig = dcwSig;
+          console.log("[trader-01] Signed via Circle DCW typedData");
+        } else {
+          console.warn("[trader-01] DCW sign failed — falling back to private key");
+          sig = await account.signTypedData({ domain, types: INTENT_TYPES, primaryType: "Intent", message: intent });
+        }
+      } else {
+        sig = await account.signTypedData({ domain, types: INTENT_TYPES, primaryType: "Intent", message: intent });
+      }
       const { request } = await client.simulateContract({
         address: router, abi: ROUTER_ABI, functionName: "submitIntent",
         args: [intent, sig], account,

@@ -68,3 +68,7 @@ export function arcscanTx(hash: string): string {
 export function arcscanAddress(addr: string): string {
   return `https://testnet.arcscan.app/address/${addr}`;
 }
+
+export function arcscanBlock(block: number | bigint): string {
+  return `https://testnet.arcscan.app/block/${block}`;
+}

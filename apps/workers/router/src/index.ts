@@ -14,9 +14,12 @@ import { eq } from "drizzle-orm";
 import { llmJudgment } from "../../refusers/src/llm_judgment.js";
 import { macroShift } from "../../refusers/src/macro_shift.js";
 import { whaleContradiction } from "../../refusers/src/whale_contradiction.js";
+import { executeOnHyperliquid } from "./adapters/hyperliquid.js";
 
-const DRY_RUN = process.env.DRY_RUN !== "false";
-const PK      = (process.env.ROUTER_PRIVATE_KEY ?? "") as `0x${string}`;
+const DRY_RUN   = process.env.DRY_RUN !== "false";
+const PK        = (process.env.ROUTER_PRIVATE_KEY ?? "") as `0x${string}`;
+const CCTP_MODE = process.env.CCTP_MODE ?? "arc-mock"; // "arc-mock" | "v2"
+const DEST_PK   = (process.env.DEST_PRIVATE_KEY ?? "") as `0x${string}`;
 
 const ROUTER_ABI = parseAbi([
   "event IntentSubmitted(uint256 indexed erc8004Id, bytes32 indexed intentHash, uint8 venue, int256 notionalUSDC, bytes32 traceCID)",
@@ -57,10 +60,10 @@ async function processIntent(log: {
 
   // IntentSubmitted event has no marketId field — infer from known agent strategies
   const AGENT_MARKET: Record<string, string> = {
-    "19297": "BTC", // Momentum
-    "19298": "BTC", // Mean Reversion
-    "19299": "ETH", // Funding Rate
-    "19300": "BTC", // Random Walk
+    "22892": "BTC", // Momentum
+    "22893": "BTC", // Mean Reversion
+    "22897": "ETH", // Funding Rate
+    "22900": "BTC", // Random Walk
   };
   const marketSymbol = AGENT_MARKET[erc8004Id.toString()] ?? "BTC";
   const direction    = notionalUSDC >= 0n ? "LONG" : "SHORT";
@@ -118,18 +121,41 @@ async function processIntent(log: {
       continue;
     }
 
-    // Execute copy — Arc mock swap (P0): receipt is content-addressed copy record anchored to current block
+    // Execute copy — CCTP V2 (v2) or Arc mock swap (arc-mock)
     const followerNotional = notionalUSDC! / 10n; // scale down for demo
-    const blockNumber      = await client.getBlockNumber().catch(() => 0n);
-    const receiptBlob      = JSON.stringify({
-      venue:             "arc-mock-swap-v0",
-      chainId:           5042002,
-      intentHash,
-      followerAddr,
-      followerNotional:  followerNotional.toString(),
-      blockNumber:       blockNumber.toString(),
-    });
-    const venueReceiptHash = keccak256(toHex(receiptBlob));
+    let venueReceiptHash: `0x${string}`;
+
+    if (CCTP_MODE === "v2" && PK && DEST_PK) {
+      try {
+        const result = await executeOnHyperliquid({
+          intentHash,
+          marketSymbol,
+          notionalUSDC: followerNotional,
+          followerAddr: followerAddr as `0x${string}`,
+          operatorPK:   PK,
+          destPK:       DEST_PK,
+        });
+        venueReceiptHash = result.venueReceiptHash;
+        console.log(`[router] CCTP bridge complete src=${result.bridgeResult.sourceTxHash}`);
+      } catch (err) {
+        console.error("[router] CCTP bridge failed — falling back to mock:", (err as Error).message?.slice(0, 200));
+        const blockNumber = await client.getBlockNumber().catch(() => 0n);
+        venueReceiptHash  = keccak256(toHex(JSON.stringify({
+          venue: "arc-mock-swap-v0", chainId: 5042002, intentHash,
+          followerAddr, followerNotional: followerNotional.toString(), blockNumber: blockNumber.toString(),
+        })));
+      }
+    } else {
+      const blockNumber = await client.getBlockNumber().catch(() => 0n);
+      venueReceiptHash  = keccak256(toHex(JSON.stringify({
+        venue:             "arc-mock-swap-v0",
+        chainId:           5042002,
+        intentHash,
+        followerAddr,
+        followerNotional:  followerNotional.toString(),
+        blockNumber:       blockNumber.toString(),
+      })));
+    }
 
     console.log(`[router] COPY follower=${followerAddr.slice(0,8)} notional=${followerNotional}`);
     try {

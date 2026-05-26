@@ -10,6 +10,10 @@ import { eq, sql } from "drizzle-orm";
 
 const CHAIN_ID = 5042002;
 
+const AGENT_MARKET: Record<number, string> = {
+  19297: "BTC", 19298: "BTC", 19299: "ETH", 19300: "BTC",
+};
+
 const ROUTER_ABI = parseAbi([
   "event IntentSubmitted(uint256 indexed erc8004Id, bytes32 indexed intentHash, uint8 venue, int256 notionalUSDC, bytes32 traceCID)",
   "event Copied(address indexed follower, uint256 indexed erc8004Id, bytes32 indexed intentHash, int256 followerNotional, bytes32 venueReceiptHash)",
@@ -45,7 +49,7 @@ async function start(): Promise<void> {
             intentHash,
             erc8004Id:    Number(erc8004Id),
             venue:        venue ?? 0,
-            marketId:     intentHash.slice(0, 20),
+            marketId:     AGENT_MARKET[Number(erc8004Id)] ?? "BTC",
             notionalUsdc: notionalUSDC?.toString() ?? "0",
             validUntil:   new Date(Date.now() + 30 * 60 * 1000),
             strategyHash: "0x",
@@ -107,11 +111,15 @@ async function start(): Promise<void> {
         if (!follower) continue;
         try {
           await store.insert(followers).values({
-            address: follower,
+            address:    follower,
             escrowUsdc: usdcAmount?.toString() ?? "0",
-            firstSeen: new Date(),
-          }).onConflictDoNothing();
-        } catch { /* already exists */ }
+            firstSeen:  new Date(),
+          }).onConflictDoUpdate({
+            target: followers.address,
+            set:    { escrowUsdc: sql`${followers.escrowUsdc}::numeric + ${(usdcAmount ?? 0n).toString()}::numeric` },
+          });
+          console.log(`[indexer] Deposited follower=${follower.slice(0,8)} amount=${usdcAmount}`);
+        } catch (err) { console.error("[indexer] follower deposit:", err); }
       }
     },
   });

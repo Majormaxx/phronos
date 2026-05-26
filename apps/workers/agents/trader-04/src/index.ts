@@ -5,7 +5,7 @@
  */
 import { privateKeyToAccount } from "viem/accounts";
 import { keccak256, toHex, createWalletClient, http } from "viem";
-import { getPublicClient, getDeployedAddresses, arcTestnet, pinJson } from "@phronos/shared";
+import { getPublicClient, getDeployedAddresses, arcTestnet, pinJson, getAgentWallet, dcwSignTypedData, type DCWWallet } from "@phronos/shared";
 import { db, traces } from "@phronos/db";
 
 const AGENT_ID    = BigInt(process.env.TRADER_04_AGENT_ID ?? "19300");
@@ -84,17 +84,37 @@ async function run(): Promise<void> {
 
   console.log(`[trader-04] random ${isLong ? "LONG" : "SHORT"} ${market} notional=${notional}`);
 
+  let dcwWallet: DCWWallet | null = null;
+  try {
+    dcwWallet = await getAgentWallet(4);
+    if (dcwWallet) console.log(`[trader-04] Circle DCW wallet: ${dcwWallet.address}`);
+  } catch { /* non-fatal */ }
+
   const account      = privateKeyToAccount(PK);
   const client       = getPublicClient();
   const walletClient = createWalletClient({ account, chain: arcTestnet, transport: http() });
 
   try {
-    const sig = await account.signTypedData({
-      domain: { name: "Phronos Router", version: "1", chainId: 5042002, verifyingContract: router },
-      types: INTENT_TYPES,
-      primaryType: "Intent",
-      message: intent,
-    });
+    const domain = { name: "Phronos Router", version: "1", chainId: 5042002, verifyingContract: router } as const;
+    let sig: `0x${string}`;
+    if (dcwWallet) {
+      const dcwSig = await dcwSignTypedData({
+        walletId:    dcwWallet.walletId,
+        domain,
+        types:       INTENT_TYPES,
+        primaryType: "Intent",
+        message:     intent as Record<string, unknown>,
+      });
+      if (dcwSig) {
+        sig = dcwSig;
+        console.log("[trader-04] Signed via Circle DCW typedData");
+      } else {
+        console.warn("[trader-04] DCW sign failed — falling back to private key");
+        sig = await account.signTypedData({ domain, types: INTENT_TYPES, primaryType: "Intent", message: intent });
+      }
+    } else {
+      sig = await account.signTypedData({ domain, types: INTENT_TYPES, primaryType: "Intent", message: intent });
+    }
     const { request } = await client.simulateContract({
       address: router, abi: ROUTER_ABI, functionName: "submitIntent",
       args: [intent, sig], account,

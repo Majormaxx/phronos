@@ -7,7 +7,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@circle-fin/developer-controlled-wallets": "^3.1.0",
     "viem": "^2.0.0",
     "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "typescript": "^5.4.0"
   }
 }
