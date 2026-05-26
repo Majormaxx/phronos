@@ -26,7 +26,12 @@ export function ConnectWalletButton() {
   }, []);
 
   async function connect() {
-    const eth = (window as any).ethereum;
+    // MetaMask injects window.ethereum asynchronously — wait up to 500ms
+    let eth = (window as any).ethereum;
+    if (!eth) {
+      await new Promise(r => setTimeout(r, 500));
+      eth = (window as any).ethereum;
+    }
     if (!eth) {
       alert("No wallet detected. Install MetaMask or a Web3 wallet.");
       return;
@@ -40,7 +45,6 @@ export function ConnectWalletButton() {
       }
     } catch (err: any) {
       if (err?.code !== 4001) console.error("[wallet] connect error:", err);
-      // 4001 = user rejected, silent
     } finally {
       setConnecting(false);
     }

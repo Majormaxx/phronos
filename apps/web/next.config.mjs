@@ -19,13 +19,17 @@ const nextConfig = {
       "porto/internal": false,
       "@base-org/account": false,
     };
-    // Circle DCW SDK uses Node built-ins (fs, net, tls) — stub them on client.
+    // Circle DCW SDK is server-only (workers). Stub it entirely on the client
+    // to prevent bundling Node built-ins and TextEncoder polyfills that break
+    // under MetaMask's SES lockdown.
     if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        "@circle-fin/developer-controlled-wallets": false,
+      };
       config.resolve.fallback = {
         ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
+        fs: false, net: false, tls: false,
       };
     }
     return config;
