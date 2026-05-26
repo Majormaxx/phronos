@@ -4,7 +4,7 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["postgres"],
   },
-  webpack(config) {
+  webpack(config, { isServer }) {
     // NodeNext-style .js imports in workspace packages → resolve to .ts source
     config.resolve.extensionAlias = {
       ".js": [".ts", ".tsx", ".js"],
@@ -19,6 +19,15 @@ const nextConfig = {
       "porto/internal": false,
       "@base-org/account": false,
     };
+    // Circle DCW SDK uses Node built-ins (fs, net, tls) — stub them on client.
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
     return config;
   },
 };
