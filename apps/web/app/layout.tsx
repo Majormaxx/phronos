@@ -17,12 +17,15 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "PHRONOS",
-  description: "A council of strategies allocates your USDC on Arc.",
+  title: "Phronos — Skin in the game. On chain.",
+  description: "Copy trading with real accountability. Every trader on Phronos has posted a bond. Miss targets, lose it.",
   openGraph: {
-    title: "PHRONOS",
-    description: "A council of strategies allocates your USDC on Arc.",
+    title: "Phronos — Skin in the game. On chain.",
+    description: "Copy trading with real accountability. Every trader on Phronos has posted a bond. Miss targets, lose it.",
     siteName: "Phronos",
+  },
+  icons: {
+    icon: "/icon.svg",
   },
 };
 

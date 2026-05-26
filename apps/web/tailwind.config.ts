@@ -8,10 +8,11 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        parchment: "#F4EFE6",
-        ink:       "#1A1714",
-        terracotta:"#C25E3C",
-        olive:     "#5A6B3B",
+        parchment: "#111113",
+        ink:       "#F0EFED",
+        terracotta:"#EF4444",
+        olive:     "#22C55E",
+        surface:   "#1A1A1D",
       },
       fontFamily: {
         display: ["var(--font-cormorant)", "Georgia", "serif"],

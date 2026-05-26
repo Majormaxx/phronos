@@ -12,15 +12,17 @@ export function ConnectWalletButton() {
 
     const eth = (window as any).ethereum;
     if (!eth) return;
-    eth.on("accountsChanged", (accounts: string[]) => {
+    const handler = (accounts: string[]) => {
       if (accounts.length === 0) {
         localStorage.removeItem("phronos_wallet");
         setAddress(null);
       } else {
-        localStorage.setItem("phronos_wallet", accounts[0]);
-        setAddress(accounts[0]);
+        localStorage.setItem("phronos_wallet", accounts[0]!);
+        setAddress(accounts[0]!);
       }
-    });
+    };
+    eth.on("accountsChanged", handler);
+    return () => eth.removeListener?.("accountsChanged", handler);
   }, []);
 
   async function connect() {
@@ -36,8 +38,9 @@ export function ConnectWalletButton() {
         localStorage.setItem("phronos_wallet", accounts[0]);
         setAddress(accounts[0]);
       }
-    } catch {
-      // user rejected
+    } catch (err: any) {
+      if (err?.code !== 4001) console.error("[wallet] connect error:", err);
+      // 4001 = user rejected, silent
     } finally {
       setConnecting(false);
     }
@@ -66,7 +69,7 @@ export function ConnectWalletButton() {
       disabled={connecting}
       className="btn-primary text-sm py-2 px-4"
     >
-      {connecting ? "Connecting…" : "Connect wallet"}
+      {connecting ? "Connecting…" : "Get in"}
     </button>
   );
 }

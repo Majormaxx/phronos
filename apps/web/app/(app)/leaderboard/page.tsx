@@ -22,120 +22,170 @@ type Agent = {
   bondUsdc: string; slashCount: number; intentCount: number; sharpe7d: number;
 };
 
-const AGENT_NAMES: Record<number, string> = {
-  19297: "Momentum",
-  19298: "Mean Reversion",
-  19299: "Funding Rate",
-  19300: "Random Walk",
+const AGENT_NAMES: Record<number, { name: string; desc: string }> = {
+  22892: { name: "Momentum",       desc: "Buys the top 3 24h performers" },
+  22893: { name: "Mean Reversion", desc: "Fades the 24h extremes" },
+  22897: { name: "Funding Rate",   desc: "Hyperliquid funding skew" },
+  22900: { name: "Random Walk",    desc: "Stochastic baseline" },
 };
+
+function bondHealth(sharpe: number): { pct: number; color: string; label: string } {
+  if (sharpe >= 1.0)  return { pct: 100, color: "bg-olive",          label: "Healthy"  };
+  if (sharpe >= 0.5)  return { pct: 75,  color: "bg-olive/70",       label: "Healthy"  };
+  if (sharpe >= 0)    return { pct: 55,  color: "bg-ink/40",         label: "Neutral"  };
+  if (sharpe >= -0.5) return { pct: 35,  color: "bg-terracotta/70",  label: "At risk"  };
+  return               { pct: 15,  color: "bg-terracotta",           label: "At risk"  };
+}
 
 export default async function LeaderboardPage() {
   const [agents, stats] = await Promise.all([getLeaderboard(), getStats()]) as [Agent[], Record<string, number>];
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-10">
-      <div className="flex items-end justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-end justify-between mb-8">
         <div>
-          <h1 className="font-display text-5xl mb-1">Leaderboard</h1>
-          <p className="text-ink/50 text-sm">
-            Slash-bonded agents · ranked by 7-day Sharpe · weights updated every 15 min
+          <h1 className="font-display text-5xl mb-1 text-ink">The board.</h1>
+          <p className="text-ink/30 text-sm font-mono">
+            Slash-bonded agents · ranked by 7-day Sharpe · updated every 15 min
           </p>
         </div>
-        <Link href="/follower" className="btn-primary text-sm">Follow an agent</Link>
+        <Link href="/follower" className="btn-primary text-sm">Start copying</Link>
       </div>
 
       {/* Stats ticker */}
       <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-8">
         {[
-          { label: "Agents", value: stats.agents ?? 0 },
+          { label: "Agents",    value: stats.agents    ?? 0 },
           { label: "Followers", value: stats.followers ?? 0 },
-          { label: "Intents", value: stats.intents ?? 0 },
-          { label: "Copies", value: stats.copies ?? 0 },
-          { label: "Refusals", value: stats.refusals ?? 0 },
-          { label: "Slashes", value: stats.slashes ?? 0 },
+          { label: "Intents",   value: stats.intents   ?? 0 },
+          { label: "Copies",    value: stats.copies    ?? 0 },
+          { label: "Refusals",  value: stats.refusals  ?? 0 },
+          { label: "Slashes",   value: stats.slashes   ?? 0 },
         ].map(({ label, value }) => (
           <div key={label} className="card text-center">
-            <p className="font-mono text-lg">{value}</p>
-            <p className="text-xs text-ink/40">{label}</p>
+            <p className="font-mono text-lg text-ink tabular-nums">{value}</p>
+            <p className="text-xs text-ink/30 font-mono">{label}</p>
           </div>
         ))}
       </div>
 
-      {/* How it works — shown to new visitors */}
-      <div className="mb-8 border border-ink/8 bg-ink/[0.015] p-6">
-        <p className="text-xs font-mono text-ink/30 uppercase tracking-widest mb-5">How Phronos works</p>
+      {/* How it works callout */}
+      <div className="mb-8 border border-ink/8 bg-surface p-6">
+        <p className="text-xs font-mono text-ink/20 uppercase tracking-widest mb-5">How Phronos works</p>
         <div className="grid md:grid-cols-3 gap-6">
           {[
-            { n: "01", title: "Agents post bonds", body: "Every agent on this board has locked real USDC — collateralised in yield-bearing USYC — before they can trade. No bond, no listing." },
-            { n: "02", title: "You copy their trades", body: "Deposit USDC escrow, pick an agent, and every signed intent they emit gets copied to your account — after three policy checks pass." },
-            { n: "03", title: "Bad agents pay you", body: "Negative 7-day Sharpe triggers an automatic slash. The bond transfers to follower escrow. Not a fee. Straight to you." },
+            { n: "01", title: "Agents post bonds",    body: "Every agent on this board locked real USDC before their first signal. No bond, no listing." },
+            { n: "02", title: "You copy their trades", body: "Deposit USDC escrow, pick an agent, and every intent they emit is copied to your account after three policy checks." },
+            { n: "03", title: "Bad agents pay you",    body: "Negative 7-day Sharpe triggers an automatic slash. The bond goes to followers. Not a fee. Straight to you." },
           ].map(({ n, title, body }) => (
             <div key={n}>
-              <p className="font-mono text-terracotta text-xs mb-2">{n}</p>
-              <p className="font-display text-lg mb-1">{title}</p>
-              <p className="text-xs text-ink/50 leading-relaxed">{body}</p>
+              <p className="font-mono text-ink/20 text-xs mb-2">{n}</p>
+              <p className="font-display text-lg mb-1 text-ink">{title}</p>
+              <p className="text-xs text-ink/40 leading-relaxed">{body}</p>
             </div>
           ))}
         </div>
         <div className="mt-5 pt-4 border-t border-ink/8 flex items-center gap-4">
-          <Link href="/follower" className="btn-primary text-sm py-2 px-4">Follow an agent</Link>
-          <Link href="/" className="text-sm text-ink/40 hover:text-ink/70 transition-colors">Full explainer →</Link>
+          <Link href="/follower" className="btn-primary text-sm py-2 px-4">Start copying</Link>
+          <Link href="/" className="text-sm text-ink/30 hover:text-ink/60 transition-colors">Full explainer →</Link>
         </div>
       </div>
 
+      {/* Agent table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-ink/10 text-xs text-ink/40 uppercase tracking-wide">
+            <tr className="border-b border-ink/10 text-[10px] text-ink/25 uppercase tracking-widest font-mono">
               <th className="text-left py-3 pr-6">Agent</th>
+              <th className="text-left py-3 pr-6 hidden md:table-cell">Bond health</th>
               <th className="text-right py-3 pr-6">7d Sharpe</th>
               <th className="text-right py-3 pr-6">Bond</th>
               <th className="text-right py-3 pr-6">Intents</th>
-              <th className="text-right py-3 pr-6">Slashes</th>
+              <th className="text-right py-3 pr-6">Paid out</th>
               <th className="text-right py-3">Operator</th>
             </tr>
           </thead>
           <tbody>
             {agents.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-ink/30">
-                  No agents yet. Indexer syncing…
+                <td colSpan={7} className="py-16 text-center text-ink/20 font-mono text-sm">
+                  Indexer syncing — check back in a moment
                 </td>
               </tr>
             )}
-            {agents.map((a) => (
-              <tr key={a.erc8004Id} className="border-b border-ink/5 hover:bg-ink/2 transition-colors">
-                <td className="py-4 pr-6">
-                  <Link href={`/agent/${a.erc8004Id}`} className="hover:text-terracotta transition-colors">
-                    <p className="font-medium">{AGENT_NAMES[a.erc8004Id] ?? `Agent #${a.erc8004Id}`}</p>
-                    <p className="text-xs text-ink/30 font-mono">ERC-8004 #{a.erc8004Id}</p>
-                  </Link>
-                </td>
-                <td className={`text-right py-4 pr-6 font-mono ${a.sharpe7d >= 0 ? "text-olive" : "text-terracotta"}`}>
-                  {a.sharpe7d.toFixed(3)}
-                </td>
-                <td className="text-right py-4 pr-6 font-mono">
-                  ${(Number(a.bondUsdc) / 1e6).toFixed(2)}
-                </td>
-                <td className="text-right py-4 pr-6 font-mono text-ink/60">{a.intentCount}</td>
-                <td className={`text-right py-4 pr-6 font-mono ${a.slashCount > 0 ? "text-terracotta" : "text-ink/40"}`}>
-                  {a.slashCount}
-                </td>
-                <td className="text-right py-4">
-                  <a
-                    href={arcscanAddress(a.operator)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-mono text-ink/30 hover:text-terracotta transition-colors"
-                  >
-                    {a.operator.slice(0, 8)}…↗
-                  </a>
-                </td>
-              </tr>
-            ))}
+            {agents.map((a, i) => {
+              const meta   = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, desc: "" };
+              const health = bondHealth(a.sharpe7d);
+              const rank   = i + 1;
+              return (
+                <tr key={a.erc8004Id} className="border-b border-ink/5 hover:bg-ink/[0.03] transition-colors">
+                  <td className="py-4 pr-6">
+                    <Link href={`/agent/${a.erc8004Id}`} className="group">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono text-ink/20 w-4 tabular-nums">{rank}</span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-ink group-hover:text-olive transition-colors">{meta.name}</p>
+                            {a.sharpe7d < 0 && (
+                              <span className="text-[9px] font-mono uppercase tracking-wider text-terracotta bg-terracotta/10 px-1.5 py-0.5 rounded">
+                                at risk
+                              </span>
+                            )}
+                            {a.slashCount > 0 && (
+                              <span className="text-[9px] font-mono uppercase tracking-wider text-terracotta/70 bg-terracotta/5 px-1.5 py-0.5 rounded">
+                                slashed ×{a.slashCount}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-ink/25 font-mono">{meta.desc}</p>
+                        </div>
+                      </div>
+                    </Link>
+                  </td>
+                  <td className="py-4 pr-6 hidden md:table-cell">
+                    <div className="flex items-center gap-2">
+                      <div className="bond-bar-track w-20">
+                        <div
+                          className={`bond-bar-fill ${health.color}`}
+                          style={{ width: `${health.pct}%` }}
+                        />
+                      </div>
+                      <span className={`text-[10px] font-mono ${a.sharpe7d < 0 ? "text-terracotta" : "text-ink/30"}`}>
+                        {health.label}
+                      </span>
+                    </div>
+                  </td>
+                  <td className={`text-right py-4 pr-6 font-mono tabular-nums ${a.sharpe7d >= 0 ? "text-olive" : "text-terracotta"}`}>
+                    {a.sharpe7d >= 0 ? "+" : ""}{a.sharpe7d.toFixed(3)}
+                  </td>
+                  <td className="text-right py-4 pr-6 font-mono text-ink/60 tabular-nums">
+                    ${(Number(a.bondUsdc) / 1e6).toFixed(2)}
+                  </td>
+                  <td className="text-right py-4 pr-6 font-mono text-ink/40 tabular-nums">{a.intentCount}</td>
+                  <td className={`text-right py-4 pr-6 font-mono tabular-nums ${a.slashCount > 0 ? "text-terracotta" : "text-ink/20"}`}>
+                    {a.slashCount > 0 ? `×${a.slashCount}` : "—"}
+                  </td>
+                  <td className="text-right py-4">
+                    <a
+                      href={arcscanAddress(a.operator)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-mono text-ink/20 hover:text-ink/50 transition-colors"
+                    >
+                      {a.operator.slice(0, 8)}…↗
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      <p className="text-xs text-ink/15 font-mono mt-6 text-right">
+        Phronos — Copy trading with receipts.
+      </p>
     </div>
   );
 }
