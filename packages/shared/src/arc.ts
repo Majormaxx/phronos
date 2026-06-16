@@ -24,11 +24,22 @@ export const addresses = {
   REPUTATION_REGISTRY:   "0x8004B663056A597Dffe9eCcC1965A193B7388713" as `0x${string}`,
   JOB_FACTORY:           "0x0747EEf0706327138c69792bF28Cd525089e4583" as `0x${string}`,
   GATEWAY_WALLET:        "0x0077777d7EBA4688BDeF3E311b846F25870A19B9" as `0x${string}`,
+  GATEWAY_MINTER:        "0x0022222ABE238Cc2C7Bb1f21003F0a260052475B" as `0x${string}`,
   CCTP_MESSENGER_V2:     "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA" as `0x${string}`,
   CCTP_TRANSMITTER_V2:   "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275" as `0x${string}`,
+  MULTICALL3:            "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`,
+  STABLEFX_ESCROW:       "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8" as `0x${string}`,
+  // Stork oracle — set once Arc Testnet address is published.
+  // Pass this address to SlashOracle.setOracle() via DeployV3.s.sol env STORK_ORACLE_ADDR.
+  STORK_ORACLE:          (process.env.STORK_ORACLE_ADDR ?? "") as `0x${string}`,
 } as const;
 
 export const CCTP_ARC_DOMAIN = 26;
+
+// BTC/USD Stork asset ID — used for Sharpe evaluation freshness verification.
+// Stork encodes asset IDs as right-padded UTF-8 bytes32: "BTCUSD" = 0x425443555344...
+export const STORK_BTCUSD_ASSET_ID =
+  "0x4254435553440000000000000000000000000000000000000000000000000000" as `0x${string}`;
 
 // EIP-712 domain for PhronosRouter — must match the deployed contract exactly.
 export const PHRONOS_EIP712_DOMAIN = {
@@ -37,7 +48,7 @@ export const PHRONOS_EIP712_DOMAIN = {
   chainId: 5042002,
 } as const;
 
-// Deployed v2 contract addresses — populated after DeployV2.s.sol broadcast.
+// Deployed v3 contract addresses — populated after DeployV3.s.sol broadcast.
 export function getDeployedAddresses() {
   return {
     registry:    (process.env.PHRONOS_REGISTRY_ADDR   ?? "") as `0x${string}`,

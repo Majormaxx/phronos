@@ -45,6 +45,9 @@ contract SlashOracleTest is Test {
     }
 
     function test_setSharpe_revert_notKeeper() public {
+        // Constructor grants KEEPER_ROLE to deployer (address(this)). Revoke it first
+        // so the call from address(this) is actually from a non-keeper.
+        oracle.revokeRole(oracle.KEEPER_ROLE(), address(this));
         vm.expectRevert();
         oracle.setSharpe(1, -5e17);
     }
