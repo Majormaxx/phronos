@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { createPublicClient, createWalletClient, custom, http, encodeFunctionData } from "viem";
 import { addresses, arcTestnet, CCTP_ARC_DOMAIN } from "@phronos/shared";
@@ -42,6 +42,21 @@ const CCTP_MESSENGER_ABI = [
     outputs: [{ name: "nonce", type: "uint64" }],
   },
 ] as const;
+
+const CCTP_TRANSMITTER_ABI = [
+  {
+    name: "receiveMessage",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "message",     type: "bytes" },
+      { name: "attestation", type: "bytes" },
+    ],
+    outputs: [{ name: "success", type: "bool" }],
+  },
+] as const;
+
+const IRIS_API = "https://iris-api-sandbox.circle.com/v2/messages/0";
 
 const REASON_NAMES: Record<number, string> = {
   1: "LLM judgment",
@@ -106,9 +121,12 @@ export function FollowerWallet() {
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [error,      setError]      = useState<string | null>(null);
   const [loading,    setLoading]    = useState(false);
-  const [walletMode, setWalletMode] = useState<WalletMode>("metamask");
-  const [scaAccount, setScaAccount] = useState<any>(null);
-  const [showBridge, setShowBridge] = useState(false);
+  const [walletMode,    setWalletMode]    = useState<WalletMode>("metamask");
+  const [scaAccount,    setScaAccount]    = useState<any>(null);
+  const [showBridge,    setShowBridge]    = useState(false);
+  const [cctpBurnTx,    setCctpBurnTx]    = useState<string | null>(null);
+  const [cctpStatus,    setCctpStatus]    = useState<"idle" | "polling" | "minting" | "done">("idle");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadChainData = useCallback(async (addr: `0x${string}`) => {
     try {
@@ -156,6 +174,49 @@ export function FollowerWallet() {
     eth.on("accountsChanged", handler);
     return () => eth.removeListener?.("accountsChanged", handler);
   }, [loadChainData, loadActivity]);
+
+  // ── CCTP V2 attestation polling + auto-mint on Arc ───────────────────────
+  useEffect(() => {
+    if (cctpStatus !== "polling" || !cctpBurnTx || !address) return;
+
+    async function pollAttestation() {
+      try {
+        const res = await fetch(`${IRIS_API}?transactionHash=${cctpBurnTx}`);
+        if (!res.ok) return;
+        const data = await res.json() as { messages?: Array<{ status: string; message: string; attestation: string }> };
+        const msg = data.messages?.[0];
+        if (!msg || msg.status !== "complete" || !msg.attestation || msg.attestation === "PENDING") return;
+
+        // Attestation ready — stop polling and mint on Arc
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        setCctpStatus("minting");
+
+        const eth = (window as any).ethereum;
+        if (!eth) { setCctpStatus("idle"); return; }
+
+        const arcWc = createWalletClient({ chain: arcTestnet, transport: custom(eth) });
+        await arcWc.switchChain({ id: arcTestnet.id }).catch(async (err: any) => {
+          if (err.code === 4902) await arcWc.addChain({ chain: arcTestnet });
+        });
+
+        const mintTx = await arcWc.writeContract({
+          address:      addresses.CCTP_TRANSMITTER_V2,
+          abi:          CCTP_TRANSMITTER_ABI,
+          functionName: "receiveMessage",
+          args:         [msg.message as `0x${string}`, msg.attestation as `0x${string}`],
+          account:      address as `0x${string}`,
+          chain:        arcTestnet,
+        });
+
+        setTxHash(mintTx);
+        setCctpStatus("done");
+        await loadChainData(address as `0x${string}`);
+      } catch { /* poll silently */ }
+    }
+
+    pollRef.current = setInterval(pollAttestation, 10_000);
+    return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  }, [cctpStatus, cctpBurnTx, address, loadChainData]);
 
   // ── MetaMask EOA deposit (current mode) ────────────────────────────────────
   async function deposit() {
@@ -355,11 +416,11 @@ export function FollowerWallet() {
       });
 
       setTxHash(burnTx);
+      setCctpBurnTx(burnTx);
+      setCctpStatus("polling");
       setStep("idle");
       setShowBridge(false);
       setError(null);
-      // Note: USDC arrives on Arc after Circle attestation (~1-2 min on testnet)
-      setTimeout(() => loadChainData(recipient), 90_000);
     } catch (e: any) {
       setError(e.message ?? "Bridge failed");
       setStep("idle");
@@ -393,6 +454,27 @@ export function FollowerWallet() {
         <div className="flex items-center gap-2 text-xs text-olive border border-olive/20 bg-olive/5 px-3 py-2">
           <span className="w-1.5 h-1.5 rounded-full bg-olive inline-block" />
           Gas-free wallet active — Circle SCA via Arc Testnet Gas Station
+        </div>
+      )}
+
+      {/* CCTP bridge status */}
+      {cctpStatus === "polling" && (
+        <div className="flex items-center gap-2 text-xs text-amber-600 border border-amber-600/20 bg-amber-600/5 px-3 py-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse inline-block" />
+          Waiting for Circle attestation — checking every 10s… USDC arrives on Arc in ~1–2 min
+        </div>
+      )}
+      {cctpStatus === "minting" && (
+        <div className="flex items-center gap-2 text-xs text-olive border border-olive/20 bg-olive/5 px-3 py-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-olive animate-pulse inline-block" />
+          Minting USDC on Arc — submitting receiveMessage…
+        </div>
+      )}
+      {cctpStatus === "done" && (
+        <div className="flex items-center gap-2 text-xs text-olive border border-olive/20 bg-olive/5 px-3 py-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-olive inline-block" />
+          Bridge complete — USDC minted on Arc
+          <button onClick={() => setCctpStatus("idle")} className="ml-auto text-ink/30 hover:text-ink">✕</button>
         </div>
       )}
 

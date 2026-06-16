@@ -1,20 +1,15 @@
 import Link from "next/link";
 import { db, agents, intents, slashes, bonds } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";
-import { arcscanAddress, arcscanTx, arcscanBlock, getDeployedAddresses } from "@phronos/shared";
+import { parseAbi } from "viem";
+import { arcscanAddress, arcscanTx, arcscanBlock, getDeployedAddresses, getPublicClient } from "@phronos/shared";
 import { FollowButton } from "@/components/FollowButton";
 import { ReplaySandbox } from "@/components/ReplaySandbox";
+import { agentName, agentStrategy } from "@/lib/agents";
 
-const AGENT_NAMES: Record<number, string> = {
-  19297: "Momentum", 19298: "Mean Reversion", 19299: "Funding Rate", 19300: "Random Walk",
-};
-
-const AGENT_STRATEGY: Record<number, string> = {
-  19297: "Follows 24h price momentum — buys top performers, shorts laggards.",
-  19298: "Fades extreme 24h moves on the assumption they revert to mean.",
-  19299: "Trades ETH/BTC funding-rate spread on Hyperliquid.",
-  19300: "Stochastic random-walk strategy — acts as an adversarial bad actor.",
-};
+const SLASH_ORACLE_ABI = parseAbi([
+  "function sharpeOf(uint256 erc8004Id) external view returns (int256 sharpe, uint64 updatedAt)",
+]);
 
 export default async function AgentPage({ params }: { params: { id: string } }) {
   const id = parseInt(params.id);
@@ -28,7 +23,21 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
 
   const agent = agentRows[0];
   const bond  = bondRows[0];
-  const { registry: registryAddr, bond: bondAddr, router: routerAddr } = getDeployedAddresses();
+  const { registry: registryAddr, bond: bondAddr, router: routerAddr, slashOracle } = getDeployedAddresses();
+
+  let sharpe7d = 0;
+  if (slashOracle) {
+    try {
+      const client = getPublicClient();
+      const [s] = await client.readContract({
+        address:      slashOracle,
+        abi:          SLASH_ORACLE_ABI,
+        functionName: "sharpeOf",
+        args:         [BigInt(id)],
+      }) as [bigint, bigint];
+      sharpe7d = Number(s) / 1e18;
+    } catch { /* oracle not yet populated */ }
+  }
 
   if (!agent) {
     return (
@@ -39,8 +48,8 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
     );
   }
 
-  const name     = AGENT_NAMES[id] ?? `Agent #${id}`;
-  const strategy = AGENT_STRATEGY[id] ?? "";
+  const name     = agentName(id);
+  const strategy = agentStrategy(id);
   const bondUsdc = Number(bond?.usdcEquiv ?? "0") / 1e6;
 
   return (
@@ -58,7 +67,7 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
       </div>
       {strategy && <p className="text-sm text-ink/50 mb-8 mt-3 max-w-lg">{strategy}</p>}
 
-      {/* Bond + operator */}
+      {/* Bond + operator + sharpe */}
       <div className="grid grid-cols-2 gap-4 mb-6">
         <div className="card">
           <p className="text-xs text-ink/40 mb-1">Bond (USDC equiv)</p>
@@ -70,6 +79,13 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
           )}
         </div>
         <div className="card">
+          <p className="text-xs text-ink/40 mb-1">7d Sharpe</p>
+          <p className={`font-mono text-lg ${sharpe7d >= 0 ? "text-olive" : "text-terracotta"}`}>
+            {sharpe7d !== 0 ? sharpe7d.toFixed(3) : <span className="text-ink/30">—</span>}
+          </p>
+          <p className="text-xs text-ink/30 mt-1">from SlashOracle</p>
+        </div>
+        <div className="card col-span-2">
           <p className="text-xs text-ink/40 mb-1">Operator</p>
           <a
             href={arcscanAddress(agent.operatorAddr)}

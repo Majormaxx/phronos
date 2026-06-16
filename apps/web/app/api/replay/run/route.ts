@@ -50,7 +50,7 @@ function executeStrategy(
 ): { marketId: string; notional: number; rationale: string } {
   const roll = prng.next();
 
-  if (strategySpecCID.includes("momentum") || agentId === 19297) {
+  if (strategySpecCID.includes("momentum") || agentId === 22892) {
     const signal = snapshot.btcChange24h >= 0 ? 1 : -1;
     const size   = Math.round(1_000_000 + roll * 9_000_000);
     return {
@@ -60,7 +60,7 @@ function executeStrategy(
     };
   }
 
-  if (strategySpecCID.includes("mean-revert") || agentId === 19298) {
+  if (strategySpecCID.includes("mean-revert") || agentId === 22893) {
     const signal = snapshot.btcChange24h >= 0 ? -1 : 1;
     const size   = Math.round(800_000 + roll * 7_200_000);
     return {
@@ -70,7 +70,7 @@ function executeStrategy(
     };
   }
 
-  if (strategySpecCID.includes("funding") || agentId === 19299) {
+  if (strategySpecCID.includes("funding") || agentId === 22897) {
     const spread = snapshot.ethChange24h - snapshot.btcChange24h;
     const signal = spread > 0 ? 1 : -1;
     const size   = Math.round(500_000 + roll * 4_500_000);

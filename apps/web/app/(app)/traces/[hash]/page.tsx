@@ -4,9 +4,7 @@ import { eq } from "drizzle-orm";
 import { arcscanAddress, arcscanBlock, resolveUrl } from "@phronos/shared";
 import { notFound } from "next/navigation";
 
-const AGENT_NAMES: Record<number, string> = {
-  19297: "Momentum", 19298: "Mean Reversion", 19299: "Funding Rate", 19300: "Random Walk",
-};
+import { agentName } from "@/lib/agents";
 
 const VENUE_NAMES: Record<number, string> = {
   0: "Arc USDC Swap", 1: "Hyperliquid Perp", 2: "Polymarket",
@@ -57,7 +55,7 @@ export default async function TracePage({ params }: { params: { hash: string } }
         href={`/agent/${intent.erc8004Id}`}
         className="text-sm text-ink/40 hover:text-ink/70 mb-6 inline-block"
       >
-        ← {AGENT_NAMES[intent.erc8004Id] ?? `Agent #${intent.erc8004Id}`}
+        ← {agentName(intent.erc8004Id)}
       </Link>
 
       <div className="flex items-center gap-3 mb-2">
@@ -219,7 +217,7 @@ export default async function TracePage({ params }: { params: { hash: string } }
 
       <div className="mt-4">
         <Link href={`/agent/${intent.erc8004Id}`} className="text-sm text-ink/40 hover:text-ink/70">
-          ← Back to {AGENT_NAMES[intent.erc8004Id] ?? `Agent #${intent.erc8004Id}`}
+          ← Back to {agentName(intent.erc8004Id)}
         </Link>
       </div>
     </div>

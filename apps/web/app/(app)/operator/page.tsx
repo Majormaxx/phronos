@@ -2,10 +2,7 @@ import { db, agents, bonds, intents, slashes } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";
 import { arcscanAddress, getDeployedAddresses } from "@phronos/shared";
 import Link from "next/link";
-
-const AGENT_NAMES: Record<number, string> = {
-  19297: "Momentum", 19298: "Mean Reversion", 19299: "Funding Rate", 19300: "Random Walk",
-};
+import { agentName } from "@/lib/agents";
 
 export default async function OperatorPage() {
   const { registry: registryAddr, router: routerAddr, operator: OPERATOR } = getDeployedAddresses();
@@ -53,7 +50,7 @@ export default async function OperatorPage() {
             <div className="flex items-start justify-between mb-4">
               <div>
                 <Link href={`/agent/${agent.erc8004Id}`} className="font-display text-xl hover:text-terracotta transition-colors">
-                  {AGENT_NAMES[agent.erc8004Id] ?? `Agent #${agent.erc8004Id}`}
+                  {agentName(agent.erc8004Id)}
                 </Link>
                 <p className="text-xs font-mono text-ink/30">ERC-8004 #{agent.erc8004Id}</p>
               </div>

@@ -2,14 +2,12 @@ import { NextResponse } from "next/server";
 import { db, intents, copies, refusals } from "@phronos/db";
 import { desc } from "drizzle-orm";
 
+import { agentName } from "@/lib/agents";
+
 const REASON_NAMES: Record<number, string> = {
   1: "LLM judgment",
   2: "Macro shift",
   3: "Whale contradiction",
-};
-
-const AGENT_NAMES: Record<number, string> = {
-  19297: "Momentum", 19298: "Mean Reversion", 19299: "Funding Rate", 19300: "Random Walk",
 };
 
 export async function GET() {
@@ -25,7 +23,7 @@ export async function GET() {
         type:    "intent" as const,
         time:    i.submittedAt,
         label:   `${Number(i.notionalUsdc) >= 0 ? "LONG" : "SHORT"} ${i.marketId}`,
-        sub:     `$${(Math.abs(Number(i.notionalUsdc)) / 1e6).toFixed(2)} · ${AGENT_NAMES[i.erc8004Id] ?? `#${i.erc8004Id}`}`,
+        sub:     `$${(Math.abs(Number(i.notionalUsdc)) / 1e6).toFixed(2)} · ${agentName(i.erc8004Id)}`,
         hash:    i.intentHash,
         agentId: i.erc8004Id,
       })),
