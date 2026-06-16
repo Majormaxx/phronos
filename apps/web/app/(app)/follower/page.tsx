@@ -1,9 +1,23 @@
-import { arcscanAddress, getDeployedAddresses } from "@phronos/shared";
+import { arcscanAddress, getDeployedAddresses, getPublicClient } from "@phronos/shared";
+import { parseAbi } from "viem";
 import Link from "next/link";
 import { FollowerWallet } from "@/components/FollowerWallet";
 
-export default function FollowerPage() {
+const ROUTER_ABI = parseAbi([
+  "function slashPool() external view returns (uint256)",
+]);
+
+export default async function FollowerPage() {
   const { router: routerAddr, bond: bondAddr } = getDeployedAddresses();
+
+  let slashPool = 0n;
+  if (routerAddr) {
+    try {
+      slashPool = await getPublicClient().readContract({
+        address: routerAddr, abi: ROUTER_ABI, functionName: "slashPool",
+      }) as bigint;
+    } catch {}
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
@@ -11,6 +25,21 @@ export default function FollowerPage() {
       <p className="text-ink/40 text-sm mb-8">
         Deposit USDC escrow · copy bonded agents · earn when bad actors get slashed
       </p>
+
+      {/* Slash pool — the "what do I earn?" answer */}
+      {slashPool > 0n && (
+        <div className="mb-6 p-4 border border-olive/20 bg-olive/5 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-olive">Slash pool available</p>
+            <p className="text-xs text-ink/40 mt-0.5">
+              Ready for distribution to active followers on the next evaluation cycle.
+            </p>
+          </div>
+          <p className="font-mono text-xl text-olive font-medium ml-6 shrink-0">
+            ${(Number(slashPool) / 1e6).toFixed(4)}
+          </p>
+        </div>
+      )}
 
       {/* How it works */}
       <div className="mb-8 grid grid-cols-3 gap-4 text-xs">

@@ -18,9 +18,25 @@ async function getStats() {
 }
 
 type Agent = {
-  erc8004Id: number; agentCardCid: string; operator: string;
-  bondUsdc: string; slashCount: number; intentCount: number; sharpe7d: number;
+  erc8004Id:       number;
+  agentCardCid:    string;
+  operator:        string;
+  bondUsdc:        string;
+  bondLive:        number | null;
+  slashCount:      number;
+  intentCount:     number;
+  sharpe7d:        number;
+  sharpeUpdatedAt: number | null;
+  feesUsdc:        number;
 };
+
+function sharpeAge(updatedAt: number | null): { label: string; stale: boolean } {
+  if (!updatedAt) return { label: "—", stale: true };
+  const ageMin = Math.floor((Date.now() / 1000 - updatedAt) / 60);
+  if (ageMin < 60)  return { label: `${ageMin}m ago`,          stale: false };
+  if (ageMin < 1440) return { label: `${Math.floor(ageMin/60)}h ago`, stale: ageMin > 360 };
+  return { label: `${Math.floor(ageMin/1440)}d ago`, stale: true };
+}
 
 const AGENT_NAMES: Record<number, { name: string; desc: string }> = {
   22892: { name: "Momentum",       desc: "Buys the top 3 24h performers" },
@@ -100,8 +116,8 @@ export default async function LeaderboardPage() {
               <th className="text-left py-3 pr-6">Agent</th>
               <th className="text-left py-3 pr-6 hidden md:table-cell">Bond health</th>
               <th className="text-right py-3 pr-6">7d Sharpe</th>
-              <th className="text-right py-3 pr-6">Bond</th>
-              <th className="text-right py-3 pr-6">Intents</th>
+              <th className="text-right py-3 pr-6">Bond (live)</th>
+              <th className="text-right py-3 pr-6 hidden lg:table-cell">Fees earned</th>
               <th className="text-right py-3 pr-6">Paid out</th>
               <th className="text-right py-3">Operator</th>
             </tr>
@@ -115,9 +131,11 @@ export default async function LeaderboardPage() {
               </tr>
             )}
             {agents.map((a, i) => {
-              const meta   = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, desc: "" };
-              const health = bondHealth(a.sharpe7d);
-              const rank   = i + 1;
+              const meta      = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, desc: "" };
+              const health    = bondHealth(a.sharpe7d);
+              const rank      = i + 1;
+              const age       = sharpeAge(a.sharpeUpdatedAt);
+              const bondShow  = a.bondLive !== null ? a.bondLive : Number(a.bondUsdc) / 1e6;
               return (
                 <tr
                   key={a.erc8004Id}
@@ -161,12 +179,22 @@ export default async function LeaderboardPage() {
                     </div>
                   </td>
                   <td className={`text-right py-4 pr-6 font-mono tabular-nums ${a.sharpe7d >= 0 ? "text-olive" : "text-terracotta"}`}>
-                    {a.sharpe7d >= 0 ? "+" : ""}{a.sharpe7d.toFixed(3)}
+                    <div>{a.sharpe7d >= 0 ? "+" : ""}{a.sharpe7d.toFixed(3)}</div>
+                    <div className={`text-[9px] mt-0.5 ${age.stale ? "text-terracotta/50" : "text-ink/20"}`}>
+                      {age.stale && "⚠ "}{age.label}
+                    </div>
                   </td>
                   <td className="text-right py-4 pr-6 font-mono text-ink/60 tabular-nums">
-                    ${(Number(a.bondUsdc) / 1e6).toFixed(2)}
+                    ${bondShow.toFixed(2)}
+                    {a.bondLive !== null && (
+                      <span className="text-[9px] text-ink/20 block">on-chain</span>
+                    )}
                   </td>
-                  <td className="text-right py-4 pr-6 font-mono text-ink/40 tabular-nums">{a.intentCount}</td>
+                  <td className="text-right py-4 pr-6 font-mono tabular-nums hidden lg:table-cell">
+                    <span className={a.feesUsdc > 0 ? "text-olive" : "text-ink/20"}>
+                      {a.feesUsdc > 0 ? `$${a.feesUsdc.toFixed(4)}` : "—"}
+                    </span>
+                  </td>
                   <td className={`text-right py-4 pr-6 font-mono tabular-nums ${a.slashCount > 0 ? "text-terracotta" : "text-ink/20"}`}>
                     {a.slashCount > 0 ? `×${a.slashCount}` : "—"}
                   </td>

@@ -1,11 +1,21 @@
 import { db, agents, bonds, intents, slashes } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";
-import { arcscanAddress, getDeployedAddresses } from "@phronos/shared";
+import { arcscanAddress, getDeployedAddresses, getPublicClient } from "@phronos/shared";
+import { parseAbi } from "viem";
 import Link from "next/link";
 import { agentName } from "@/lib/agents";
 
+const ROUTER_ABI = parseAbi([
+  "function feesAccrued(uint256 erc8004Id) external view returns (uint256)",
+  "function slashPool() external view returns (uint256)",
+]);
+
+const SLASH_ORACLE_ABI = parseAbi([
+  "function sharpeOf(uint256 erc8004Id) external view returns (int256 sharpe, uint64 updatedAt)",
+]);
+
 export default async function OperatorPage() {
-  const { registry: registryAddr, router: routerAddr, operator: OPERATOR } = getDeployedAddresses();
+  const { registry: registryAddr, router: routerAddr, slashOracle, operator: OPERATOR } = getDeployedAddresses();
 
   if (!OPERATOR) {
     return (
@@ -16,7 +26,13 @@ export default async function OperatorPage() {
     );
   }
 
+  const client    = getPublicClient();
   const allAgents = await db().select().from(agents).where(eq(agents.operatorAddr, OPERATOR));
+
+  let totalSlashPool = 0n;
+  if (routerAddr) {
+    try { totalSlashPool = await client.readContract({ address: routerAddr, abi: ROUTER_ABI, functionName: "slashPool" }) as bigint; } catch {}
+  }
 
   const agentData = await Promise.all(allAgents.map(async (a) => {
     const [bondRows, recentIntents, slashRows] = await Promise.all([
@@ -24,8 +40,32 @@ export default async function OperatorPage() {
       db().select().from(intents).where(eq(intents.erc8004Id, a.erc8004Id)).orderBy(desc(intents.submittedAt)).limit(5),
       db().select().from(slashes).where(eq(slashes.erc8004Id, a.erc8004Id)).orderBy(desc(slashes.blockNumber)).limit(5),
     ]);
-    return { agent: a, bond: bondRows[0], intents: recentIntents, slashes: slashRows };
+
+    let feesUsdc = 0;
+    let sharpe7d: number | null = null;
+    let sharpeUpdatedAt: number | null = null;
+
+    await Promise.allSettled([
+      routerAddr && client.readContract({
+        address: routerAddr, abi: ROUTER_ABI, functionName: "feesAccrued", args: [BigInt(a.erc8004Id)],
+      }).then(f => { feesUsdc = Number(f as bigint) / 1e6; }),
+
+      slashOracle && client.readContract({
+        address: slashOracle, abi: SLASH_ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(a.erc8004Id)],
+      }).then(([s, u]) => {
+        sharpe7d        = Number(s as bigint) / 1e18;
+        sharpeUpdatedAt = Number(u as bigint);
+      }),
+    ]);
+
+    return {
+      agent: a, bond: bondRows[0], intents: recentIntents, slashes: slashRows, feesUsdc,
+      sharpe7d:        sharpe7d as number | null,
+      sharpeUpdatedAt: sharpeUpdatedAt as number | null,
+    };
   }));
+
+  const totalFees = agentData.reduce((sum, d) => sum + d.feesUsdc, 0);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
@@ -39,13 +79,29 @@ export default async function OperatorPage() {
         Managing {allAgents.length} agent{allAgents.length !== 1 ? "s" : ""} · bonds in USDC collateralised in USYC
       </p>
 
+      {/* Operator summary */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="card text-center">
+          <p className="font-mono text-lg text-olive">${totalFees.toFixed(4)}</p>
+          <p className="text-xs text-ink/30">Total fees earned</p>
+        </div>
+        <div className="card text-center">
+          <p className="font-mono text-lg">${(Number(totalSlashPool) / 1e6).toFixed(4)}</p>
+          <p className="text-xs text-ink/30">Slash pool</p>
+        </div>
+        <div className="card text-center">
+          <p className="font-mono text-lg">{allAgents.length}</p>
+          <p className="text-xs text-ink/30">Active agents</p>
+        </div>
+      </div>
+
       <div className="mb-8 space-y-1 text-xs text-ink/40 font-mono">
         {registryAddr && <p>Registry: <a href={arcscanAddress(registryAddr)} target="_blank" rel="noopener noreferrer" className="hover:text-terracotta">{registryAddr.slice(0, 12)}…↗</a></p>}
         {routerAddr   && <p>Router:   <a href={arcscanAddress(routerAddr)} target="_blank" rel="noopener noreferrer" className="hover:text-terracotta">{routerAddr.slice(0, 12)}…↗</a></p>}
       </div>
 
       <div className="space-y-8">
-        {agentData.map(({ agent, bond, intents: agentIntents, slashes: agentSlashes }) => (
+        {agentData.map(({ agent, bond, intents: agentIntents, slashes: agentSlashes, feesUsdc, sharpe7d, sharpeUpdatedAt }) => (
           <div key={agent.erc8004Id} className="card">
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -54,9 +110,32 @@ export default async function OperatorPage() {
                 </Link>
                 <p className="text-xs font-mono text-ink/30">ERC-8004 #{agent.erc8004Id}</p>
               </div>
-              <div className="text-right">
-                <p className="font-mono text-sm">${(Number(bond?.usdcEquiv ?? "0") / 1e6).toFixed(2)}</p>
-                <p className="text-xs text-ink/40">bond (USDC)</p>
+              <div className="flex gap-6 text-right">
+                <div>
+                  <p className="font-mono text-sm">${(Number(bond?.usdcEquiv ?? "0") / 1e6).toFixed(2)}</p>
+                  <p className="text-xs text-ink/40">bond (USDC)</p>
+                </div>
+                <div>
+                  <p className={`font-mono text-sm ${feesUsdc > 0 ? "text-olive" : "text-ink/30"}`}>
+                    ${feesUsdc.toFixed(4)}
+                  </p>
+                  <p className="text-xs text-ink/40">fees accrued</p>
+                </div>
+                {sharpe7d !== null && (
+                  <div>
+                    <p className={`font-mono text-sm ${(sharpe7d ?? 0) >= 0 ? "text-olive" : "text-terracotta"}`}>
+                      {(sharpe7d ?? 0) >= 0 ? "+" : ""}{(sharpe7d ?? 0).toFixed(3)}
+                    </p>
+                    <p className="text-xs text-ink/40">
+                      7d Sharpe
+                      {sharpeUpdatedAt && (
+                        <span className="text-ink/20 ml-1">
+                          · {Math.floor((Date.now() / 1000 - sharpeUpdatedAt) / 60)}m ago
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

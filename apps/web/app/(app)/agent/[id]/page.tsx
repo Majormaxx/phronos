@@ -25,18 +25,45 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
   const bond  = bondRows[0];
   const { registry: registryAddr, bond: bondAddr, router: routerAddr, slashOracle } = getDeployedAddresses();
 
-  let sharpe7d = 0;
+  let sharpe7d        = 0;
+  let sharpeUpdatedAt: number | null = null;
   if (slashOracle) {
     try {
       const client = getPublicClient();
-      const [s] = await client.readContract({
+      const [s, u] = await client.readContract({
         address:      slashOracle,
         abi:          SLASH_ORACLE_ABI,
         functionName: "sharpeOf",
         args:         [BigInt(id)],
       }) as [bigint, bigint];
-      sharpe7d = Number(s) / 1e18;
+      sharpe7d        = Number(s) / 1e18;
+      sharpeUpdatedAt = Number(u);
     } catch { /* oracle not yet populated */ }
+  }
+
+  // Hyperliquid live funding rates — only for agent 22897 (Funding Rate strategy)
+  let fundingData: { btcFunding: number; ethFunding: number; spread: number; signal: string } | null = null;
+  if (id === 22897) {
+    try {
+      const res = await fetch("https://api.hyperliquid.xyz/info", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ type: "metaAndAssetCtxs" }),
+        signal:  AbortSignal.timeout(4000),
+        next:    { revalidate: 60 },
+      });
+      if (res.ok) {
+        const [meta, ctxs] = await res.json() as [
+          { universe: Array<{ name: string }> },
+          Array<{ funding: string }>
+        ];
+        const btcIdx     = meta.universe.findIndex(u => u.name === "BTC");
+        const ethIdx     = meta.universe.findIndex(u => u.name === "ETH");
+        const btcFunding = btcIdx >= 0 ? parseFloat(ctxs[btcIdx]?.funding ?? "0") : 0;
+        const ethFunding = ethIdx >= 0 ? parseFloat(ctxs[ethIdx]?.funding ?? "0") : 0;
+        fundingData      = { btcFunding, ethFunding, spread: ethFunding - btcFunding, signal: ethFunding > btcFunding ? "LONG_ETH" : "LONG_BTC" };
+      }
+    } catch { /* Hyperliquid unavailable */ }
   }
 
   if (!agent) {
@@ -83,7 +110,20 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
           <p className={`font-mono text-lg ${sharpe7d >= 0 ? "text-olive" : "text-terracotta"}`}>
             {sharpe7d !== 0 ? sharpe7d.toFixed(3) : <span className="text-ink/30">—</span>}
           </p>
-          <p className="text-xs text-ink/30 mt-1">from SlashOracle</p>
+          <p className="text-xs text-ink/30 mt-1">
+            {sharpeUpdatedAt
+              ? (() => {
+                  const ageMin = Math.floor((Date.now() / 1000 - sharpeUpdatedAt) / 60);
+                  const stale  = ageMin > 360;
+                  return (
+                    <span className={stale ? "text-terracotta/60" : ""}>
+                      {stale ? "⚠ stale · " : ""}Updated {ageMin < 60 ? `${ageMin}m` : `${Math.floor(ageMin/60)}h`} ago
+                    </span>
+                  );
+                })()
+              : "from SlashOracle"
+            }
+          </p>
         </div>
         <div className="card col-span-2">
           <p className="text-xs text-ink/40 mb-1">Operator</p>
@@ -100,6 +140,41 @@ export default async function AgentPage({ params }: { params: { id: string } }) 
           </p>
         </div>
       </div>
+
+      {/* Hyperliquid live funding rates — Funding Rate agent only */}
+      {fundingData && (
+        <div className="mb-6 border border-ink/10 p-4 bg-surface">
+          <p className="text-[10px] font-mono text-ink/20 uppercase tracking-widest mb-3">
+            Hyperliquid perp funding · live signal
+          </p>
+          <div className="grid grid-cols-3 gap-4 text-xs font-mono mb-3">
+            <div>
+              <p className="text-ink/30 mb-0.5">ETH funding/hr</p>
+              <p className={`text-base ${fundingData.ethFunding > 0 ? "text-olive" : "text-terracotta"}`}>
+                {fundingData.ethFunding >= 0 ? "+" : ""}{(fundingData.ethFunding * 100).toFixed(4)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-ink/30 mb-0.5">BTC funding/hr</p>
+              <p className={`text-base ${fundingData.btcFunding > 0 ? "text-olive" : "text-terracotta"}`}>
+                {fundingData.btcFunding >= 0 ? "+" : ""}{(fundingData.btcFunding * 100).toFixed(4)}%
+              </p>
+            </div>
+            <div>
+              <p className="text-ink/30 mb-0.5">Spread (ETH−BTC)</p>
+              <p className={`text-base font-medium ${fundingData.spread > 0 ? "text-olive" : "text-terracotta"}`}>
+                {fundingData.spread >= 0 ? "+" : ""}{(fundingData.spread * 100).toFixed(4)}%
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 pt-3 border-t border-ink/8">
+            <span className={`text-xs px-2 py-0.5 font-mono ${fundingData.signal === "LONG_ETH" ? "bg-olive/15 text-olive" : "bg-terracotta/15 text-terracotta"}`}>
+              {fundingData.signal === "LONG_ETH" ? "LONG ETH" : "LONG BTC"}
+            </span>
+            <span className="text-xs text-ink/30">current signal — spread favours {fundingData.signal === "LONG_ETH" ? "ETH" : "BTC"} long</span>
+          </div>
+        </div>
+      )}
 
       {/* Slash summary badge */}
       {recentSlashes.length > 0 && (

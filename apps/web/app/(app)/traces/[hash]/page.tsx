@@ -49,6 +49,24 @@ export default async function TracePage({ params }: { params: { hash: string } }
   const ipfsCid = traceRows[0]?.traceCid ?? null;
   const isLong  = Number(intent.notionalUsdc) >= 0;
 
+  // Fetch trace content from IPFS if we have a real CID (Qm... or bafy...)
+  interface TraceContent {
+    result?:   { rationale?: string; marketId?: string; notional?: number };
+    snapshot?: { btcPrice?: number; ethPrice?: number; btcChange24h?: number; ethChange24h?: number };
+    priceSource?: string;
+    seed?: number;
+  }
+  let traceContent: TraceContent | null = null;
+  if (ipfsCid && (ipfsCid.startsWith("Qm") || ipfsCid.startsWith("bafy"))) {
+    try {
+      const r = await fetch(`https://gateway.pinata.cloud/ipfs/${ipfsCid}`, {
+        signal: AbortSignal.timeout(5000),
+        next:   { revalidate: 86400 },
+      });
+      if (r.ok) traceContent = await r.json();
+    } catch { /* IPFS unavailable — degrade gracefully */ }
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <Link
@@ -85,6 +103,52 @@ export default async function TracePage({ params }: { params: { hash: string } }
           <p className="font-mono text-sm">{new Date(intent.validUntil).toISOString().replace("T", " ").slice(0, 19)} UTC</p>
         </div>
       </div>
+
+      {/* Trace rationale — inline IPFS content */}
+      {traceContent?.result?.rationale && (
+        <div className="mb-8 p-5 border border-ink/10 bg-surface">
+          <p className="text-[10px] font-mono text-ink/20 uppercase tracking-widest mb-3">Strategy rationale</p>
+          <p className="font-mono text-sm text-ink/80 mb-4">{traceContent.result.rationale}</p>
+          {traceContent.snapshot && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t border-ink/8 text-xs font-mono">
+              {traceContent.snapshot.btcPrice != null && (
+                <div>
+                  <p className="text-ink/30 mb-0.5">BTC at signal</p>
+                  <p>${traceContent.snapshot.btcPrice.toLocaleString()}</p>
+                </div>
+              )}
+              {traceContent.snapshot.ethPrice != null && (
+                <div>
+                  <p className="text-ink/30 mb-0.5">ETH at signal</p>
+                  <p>${traceContent.snapshot.ethPrice.toLocaleString()}</p>
+                </div>
+              )}
+              {traceContent.snapshot.btcChange24h != null && (
+                <div>
+                  <p className="text-ink/30 mb-0.5">BTC 24h Δ</p>
+                  <p className={traceContent.snapshot.btcChange24h >= 0 ? "text-olive" : "text-terracotta"}>
+                    {traceContent.snapshot.btcChange24h >= 0 ? "+" : ""}{(traceContent.snapshot.btcChange24h * 100).toFixed(2)}%
+                  </p>
+                </div>
+              )}
+              {traceContent.snapshot.ethChange24h != null && (
+                <div>
+                  <p className="text-ink/30 mb-0.5">ETH 24h Δ</p>
+                  <p className={traceContent.snapshot.ethChange24h >= 0 ? "text-olive" : "text-terracotta"}>
+                    {traceContent.snapshot.ethChange24h >= 0 ? "+" : ""}{(traceContent.snapshot.ethChange24h * 100).toFixed(2)}%
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          {traceContent.priceSource && (
+            <p className="text-[10px] text-ink/15 font-mono mt-3">
+              Price source: {traceContent.priceSource}
+              {traceContent.seed != null && ` · seed: ${traceContent.seed}`}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Replay trace */}
       <h2 className="font-display text-2xl mb-3">Replay trace</h2>
