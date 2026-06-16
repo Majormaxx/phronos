@@ -3,10 +3,16 @@
 // Agent IDs match the live ERC-8004 registrations on Arc Testnet.
 
 export const AGENT_NAMES: Record<number, string> = {
+  // v2 deployment (current — May 25 2026)
   22892: "Momentum",
   22893: "Mean Reversion",
   22897: "Funding Rate",
   22900: "Random Walk",
+  // v1 deployment (superseded — same strategies, earlier token IDs)
+  19297: "Momentum",
+  19298: "Mean Reversion",
+  19299: "Funding Rate",
+  19300: "Random Walk",
 };
 
 export const AGENT_STRATEGY: Record<number, string> = {
@@ -14,6 +20,10 @@ export const AGENT_STRATEGY: Record<number, string> = {
   22893: "Fades extreme 24h moves on the assumption they revert to mean.",
   22897: "Trades ETH/BTC funding-rate spread on Hyperliquid.",
   22900: "Stochastic random-walk strategy — adversarial bad actor baseline.",
+  19297: "Follows 24h price momentum — buys top performers, shorts laggards.",
+  19298: "Fades extreme 24h moves on the assumption they revert to mean.",
+  19299: "Trades ETH/BTC funding-rate spread on Hyperliquid.",
+  19300: "Stochastic random-walk strategy — adversarial bad actor baseline.",
 };
 
 export const AGENT_DESC: Record<number, string> = {
@@ -21,6 +31,10 @@ export const AGENT_DESC: Record<number, string> = {
   22893: "Fades the 24h extremes",
   22897: "Hyperliquid funding skew",
   22900: "Stochastic baseline",
+  19297: "Buys the top 3 24h performers",
+  19298: "Fades the 24h extremes",
+  19299: "Hyperliquid funding skew",
+  19300: "Stochastic baseline",
 };
 
 export function agentName(id: number): string {

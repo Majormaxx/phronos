@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { arcscanAddress } from "@phronos/shared";
+import { agentName, agentDesc } from "@/lib/agents";
 
 async function getLeaderboard() {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -37,13 +38,6 @@ function sharpeAge(updatedAt: number | null): { label: string; stale: boolean } 
   if (ageMin < 1440) return { label: `${Math.floor(ageMin/60)}h ago`, stale: ageMin > 360 };
   return { label: `${Math.floor(ageMin/1440)}d ago`, stale: true };
 }
-
-const AGENT_NAMES: Record<number, { name: string; desc: string }> = {
-  22892: { name: "Momentum",       desc: "Buys the top 3 24h performers" },
-  22893: { name: "Mean Reversion", desc: "Fades the 24h extremes" },
-  22897: { name: "Funding Rate",   desc: "Hyperliquid funding skew" },
-  22900: { name: "Random Walk",    desc: "Stochastic baseline" },
-};
 
 function bondHealth(sharpe: number): { pct: number; color: string; label: string } {
   if (sharpe >= 1.0)  return { pct: 100, color: "bg-olive",          label: "Healthy"  };
@@ -131,7 +125,7 @@ export default async function LeaderboardPage() {
               </tr>
             )}
             {agents.map((a, i) => {
-              const meta      = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, desc: "" };
+              const meta      = { name: agentName(a.erc8004Id), desc: agentDesc(a.erc8004Id) };
               const health    = bondHealth(a.sharpe7d);
               const rank      = i + 1;
               const age       = sharpeAge(a.sharpeUpdatedAt ?? null);
