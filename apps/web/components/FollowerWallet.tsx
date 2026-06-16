@@ -70,6 +70,31 @@ const SEPOLIA_CCTP_V2 = "0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5" as `0x${str
 
 type WalletMode = "metamask" | "circle-sca";
 
+function useCountUp(target: number, duration = 600): number {
+  const [current, setCurrent] = useState(0);
+  const frameRef = useRef<number | null>(null);
+  const fromRef  = useRef(0);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    fromRef.current = current;
+    startRef.current = null;
+    const animate = (ts: number) => {
+      if (!startRef.current) startRef.current = ts;
+      const t = Math.min((ts - startRef.current) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      setCurrent(fromRef.current + (target - fromRef.current) * ease);
+      if (t < 1) frameRef.current = requestAnimationFrame(animate);
+    };
+    frameRef.current = requestAnimationFrame(animate);
+    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, duration]);
+
+  return current;
+}
+
 interface Copy {
   intentHash:       string;
   followerAddr:     string;
@@ -126,7 +151,11 @@ export function FollowerWallet() {
   const [showBridge,    setShowBridge]    = useState(false);
   const [cctpBurnTx,    setCctpBurnTx]    = useState<string | null>(null);
   const [cctpStatus,    setCctpStatus]    = useState<"idle" | "polling" | "minting" | "done">("idle");
+  const [cctpElapsed,   setCctpElapsed]   = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const escrowDisplay = useCountUp(Number(escrow) / 1e6);
+  const usdcDisplay   = useCountUp(Number(usdcBal) / 1e6);
 
   const loadChainData = useCallback(async (addr: `0x${string}`) => {
     try {
@@ -217,6 +246,13 @@ export function FollowerWallet() {
     pollRef.current = setInterval(pollAttestation, 10_000);
     return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
   }, [cctpStatus, cctpBurnTx, address, loadChainData]);
+
+  // ── CCTP attestation elapsed counter ─────────────────────────────────────
+  useEffect(() => {
+    if (cctpStatus !== "polling") { setCctpElapsed(0); return; }
+    const id = setInterval(() => setCctpElapsed(n => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [cctpStatus]);
 
   // ── MetaMask EOA deposit (current mode) ────────────────────────────────────
   async function deposit() {
@@ -459,9 +495,14 @@ export function FollowerWallet() {
 
       {/* CCTP bridge status */}
       {cctpStatus === "polling" && (
-        <div className="flex items-center gap-2 text-xs text-amber-600 border border-amber-600/20 bg-amber-600/5 px-3 py-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse inline-block" />
-          Waiting for Circle attestation — checking every 10s… USDC arrives on Arc in ~1–2 min
+        <div className="flex items-center justify-between text-xs text-amber-600 border border-amber-600/20 bg-amber-600/5 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse inline-block" />
+            Awaiting attestation — Circle IRIS checking burn tx
+          </div>
+          <span className="font-mono tabular-nums">
+            {Math.floor(cctpElapsed / 60)}:{String(cctpElapsed % 60).padStart(2, "0")} elapsed
+          </span>
         </div>
       )}
       {cctpStatus === "minting" && (
@@ -482,18 +523,33 @@ export function FollowerWallet() {
       <div className="grid grid-cols-2 gap-4">
         <div className="card">
           <p className="text-xs text-ink/40 mb-1">Escrow balance</p>
-          <p className="font-mono text-lg">${(Number(escrow) / 1e6).toFixed(4)} USDC</p>
+          <p className="font-mono text-lg tabular-nums">${escrowDisplay.toFixed(4)} USDC</p>
           <p className="text-xs text-ink/30 mt-1 font-mono">{address.slice(0, 10)}…</p>
         </div>
         <div className="card">
           <p className="text-xs text-ink/40 mb-1">Wallet USDC</p>
-          <p className="font-mono text-lg">${(Number(usdcBal) / 1e6).toFixed(4)} USDC</p>
+          <p className="font-mono text-lg tabular-nums">${usdcDisplay.toFixed(4)} USDC</p>
           <p className="text-xs text-ink/30 mt-1">{walletMode === "circle-sca" ? "Gas Station wallet" : "Arc Testnet balance"}</p>
         </div>
       </div>
 
       {/* Deposit / withdraw */}
-      <div className="card">
+      <div className="card relative overflow-hidden">
+        {/* Transaction progress strip — 2px bar tracking approve→deposit→done */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-ink/5">
+          <div
+            className="h-full bg-olive transition-[width] duration-500 ease-out"
+            style={{
+              width: step === "approving"  ? "40%"
+                   : step === "depositing" ? "85%"
+                   : step === "withdrawing"? "60%"
+                   : txHash && step === "idle" ? "100%"
+                   : "0%",
+              opacity: step === "idle" && !txHash ? 0 : 1,
+              transitionProperty: "width, opacity",
+            }}
+          />
+        </div>
         <div className="flex items-center justify-between mb-4">
           <p className="text-sm font-medium">Manage escrow</p>
           <div className="flex items-center gap-2 text-xs text-ink/40">

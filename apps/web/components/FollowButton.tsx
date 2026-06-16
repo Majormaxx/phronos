@@ -16,10 +16,11 @@ interface Props {
 }
 
 export function FollowButton({ erc8004Id, agentName }: Props) {
-  const [address,   setAddress]   = useState<string | null>(null);
-  const [following, setFollowing] = useState(false);
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
+  const [address,      setAddress]      = useState<string | null>(null);
+  const [following,    setFollowing]    = useState(false);
+  const [justFollowed, setJustFollowed] = useState(false);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("phronos_wallet");
@@ -72,6 +73,8 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Policy registration failed");
       setFollowing(true);
+      setJustFollowed(true);
+      setTimeout(() => setJustFollowed(false), 800);
     } catch (e: any) {
       setError(e.message ?? "Something went wrong");
     } finally {
@@ -81,7 +84,7 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
 
   if (following) {
     return (
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+      <div className={`flex flex-col sm:flex-row sm:items-center gap-2 ${justFollowed ? "follow-flash" : ""}`}>
         <span className="inline-flex items-center gap-2 text-sm font-mono text-olive">
           <span className="w-2 h-2 rounded-full bg-olive inline-block animate-pulse" />
           Copying {agentName}

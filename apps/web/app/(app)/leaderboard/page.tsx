@@ -119,14 +119,18 @@ export default async function LeaderboardPage() {
               const health = bondHealth(a.sharpe7d);
               const rank   = i + 1;
               return (
-                <tr key={a.erc8004Id} className="border-b border-ink/5 hover:bg-ink/[0.03] transition-colors">
-                  <td className="py-4 pr-6">
-                    <Link href={`/agent/${a.erc8004Id}`} className="group">
+                <tr
+                  key={a.erc8004Id}
+                  className="leaderboard-row border-b border-ink/5 hover:bg-ink/[0.025] transition-colors group"
+                  style={{ "--row-i": i } as React.CSSProperties}
+                >
+                  <td className="py-4 pr-6 border-l-2 border-l-transparent group-hover:border-l-terracotta/25 transition-colors">
+                    <Link href={`/agent/${a.erc8004Id}`} className="group/link">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-mono text-ink/20 w-4 tabular-nums">{rank}</span>
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="font-medium text-ink group-hover:text-olive transition-colors">{meta.name}</p>
+                            <p className="font-medium text-ink group-hover/link:text-olive transition-colors">{meta.name}</p>
                             {a.sharpe7d < 0 && (
                               <span className="text-[9px] font-mono uppercase tracking-wider text-terracotta bg-terracotta/10 px-1.5 py-0.5 rounded">
                                 at risk

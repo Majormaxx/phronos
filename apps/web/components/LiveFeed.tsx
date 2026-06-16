@@ -79,7 +79,8 @@ export function LiveFeed() {
             return (
               <div
                 key={`${e.type}-${e.hash ?? i}-${i}`}
-                className="flex items-center gap-3 py-2.5 border-b border-ink/5 last:border-0 group"
+                className="feed-item flex items-center gap-3 py-2.5 border-b border-ink/5 last:border-0 group"
+                style={{ animationDelay: `${i * 35}ms` }}
               >
                 <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
                 <div className="flex-1 min-w-0">
