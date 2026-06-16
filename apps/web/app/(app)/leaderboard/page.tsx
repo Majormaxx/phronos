@@ -18,16 +18,16 @@ async function getStats() {
 }
 
 type Agent = {
-  erc8004Id:       number;
-  agentCardCid:    string;
-  operator:        string;
-  bondUsdc:        string;
-  bondLive:        number | null;
-  slashCount:      number;
-  intentCount:     number;
-  sharpe7d:        number;
-  sharpeUpdatedAt: number | null;
-  feesUsdc:        number;
+  erc8004Id:        number;
+  agentCardCid:     string;
+  operator:         string;
+  bondUsdc:         string;
+  bondLive?:        number | null;
+  slashCount:       number;
+  intentCount:      number;
+  sharpe7d:         number;
+  sharpeUpdatedAt?: number | null;
+  feesUsdc?:        number;
 };
 
 function sharpeAge(updatedAt: number | null): { label: string; stale: boolean } {
@@ -134,8 +134,9 @@ export default async function LeaderboardPage() {
               const meta      = AGENT_NAMES[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, desc: "" };
               const health    = bondHealth(a.sharpe7d);
               const rank      = i + 1;
-              const age       = sharpeAge(a.sharpeUpdatedAt);
-              const bondShow  = a.bondLive !== null ? a.bondLive : Number(a.bondUsdc) / 1e6;
+              const age       = sharpeAge(a.sharpeUpdatedAt ?? null);
+              const bondShow  = a.bondLive ?? (Number(a.bondUsdc) / 1e6);
+              const fees      = a.feesUsdc ?? 0;
               return (
                 <tr
                   key={a.erc8004Id}
@@ -186,13 +187,13 @@ export default async function LeaderboardPage() {
                   </td>
                   <td className="text-right py-4 pr-6 font-mono text-ink/60 tabular-nums">
                     ${bondShow.toFixed(2)}
-                    {a.bondLive !== null && (
+                    {a.bondLive != null && (
                       <span className="text-[9px] text-ink/20 block">on-chain</span>
                     )}
                   </td>
                   <td className="text-right py-4 pr-6 font-mono tabular-nums hidden lg:table-cell">
-                    <span className={a.feesUsdc > 0 ? "text-olive" : "text-ink/20"}>
-                      {a.feesUsdc > 0 ? `$${a.feesUsdc.toFixed(4)}` : "—"}
+                    <span className={fees > 0 ? "text-olive" : "text-ink/20"}>
+                      {fees > 0 ? `$${fees.toFixed(4)}` : "—"}
                     </span>
                   </td>
                   <td className={`text-right py-4 pr-6 font-mono tabular-nums ${a.slashCount > 0 ? "text-terracotta" : "text-ink/20"}`}>
