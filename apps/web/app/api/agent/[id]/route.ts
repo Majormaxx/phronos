@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 import { NextResponse } from "next/server";
-import { db, agents, bonds, intents, slashes } from "@phronos/db";
+import { db, rawSql, agents, bonds, intents, slashes } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { parseAbi } from "viem";
@@ -74,6 +74,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       traceCid:     i.traceCid,
       submittedAt:  i.submittedAt,
       blockNumber:  i.blockNumber,
+      entryPricePx: i.entryPricePx ? Number(i.entryPricePx) : null,
+      closePricePx: i.closePricePx ? Number(i.closePricePx) : null,
+      hlOrderId:    i.hlOrderId    ?? null,
     })),
     slashes: recentSlashes.map(s => ({
       bps:          s.bps,

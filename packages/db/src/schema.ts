@@ -39,16 +39,21 @@ export const policies = pgTable("policies", {
 }, (t) => ({ pk: primaryKey({ columns: [t.followerAddr, t.erc8004Id] }) }));
 
 export const intents = pgTable("intents", {
-  intentHash:   text("intent_hash").primaryKey(),
-  erc8004Id:    bigint("erc8004_id", { mode: "number" }).notNull(),
-  venue:        smallint("venue").notNull(),        // 0=ARC_USDC_SWAP 1=HL_PERP 2=POLY_PRED
-  marketId:     text("market_id").notNull(),
-  notionalUsdc: numeric("notional_usdc", { precision: 78, scale: 0 }).notNull(),
-  validUntil:   timestamp("valid_until", { withTimezone: true }).notNull(),
-  strategyHash: text("strategy_hash").notNull(),
-  traceCid:     text("trace_cid").notNull(),
-  submittedAt:  timestamp("submitted_at", { withTimezone: true }).notNull(),
-  blockNumber:  bigint("block_number", { mode: "number" }).notNull(),
+  intentHash:    text("intent_hash").primaryKey(),
+  erc8004Id:     bigint("erc8004_id", { mode: "number" }).notNull(),
+  venue:         smallint("venue").notNull(),        // 0=ARC_USDC_SWAP 1=HL_PERP 2=POLY_PRED
+  marketId:      text("market_id").notNull(),
+  notionalUsdc:  numeric("notional_usdc", { precision: 78, scale: 0 }).notNull(),
+  validUntil:    timestamp("valid_until", { withTimezone: true }).notNull(),
+  strategyHash:  text("strategy_hash").notNull(),
+  traceCid:      text("trace_cid").notNull(),
+  submittedAt:   timestamp("submitted_at", { withTimezone: true }).notNull(),
+  blockNumber:   bigint("block_number", { mode: "number" }).notNull(),
+  // HL perp fill data — null when using arc-mock venue
+  hlOrderId:     text("hl_order_id"),
+  entryPricePx:  numeric("entry_price_px", { precision: 30, scale: 10 }),
+  fillSzBase:    numeric("fill_sz_base",   { precision: 30, scale: 10 }),
+  closePricePx:  numeric("close_price_px", { precision: 30, scale: 10 }),
 });
 
 export const copies = pgTable("copies", {
@@ -57,6 +62,8 @@ export const copies = pgTable("copies", {
   followerNotional: numeric("follower_notional", { precision: 78, scale: 0 }).notNull(),
   venueReceipt:     text("venue_receipt").notNull(),
   executedAt:       timestamp("executed_at", { withTimezone: true }).notNull(),
+  // Realized P&L filled in by keeper when position closes
+  pnlUsdc:          numeric("pnl_usdc", { precision: 30, scale: 10 }),
 }, (t) => ({ pk: primaryKey({ columns: [t.intentHash, t.followerAddr] }) }));
 
 export const refusals = pgTable("refusals", {

@@ -6,6 +6,19 @@ import { FollowButton } from "@/components/FollowButton";
 import { ReplaySandbox } from "@/components/ReplaySandbox";
 import { agentName, agentStrategy } from "@/lib/agents";
 
+type IntentRow = {
+  intentHash:   string;
+  marketId:     string;
+  notionalUsdc: string;
+  venue:        number;
+  traceCid:     string;
+  submittedAt:  string;
+  blockNumber:  number;
+  entryPricePx: number | null;
+  closePricePx: number | null;
+  hlOrderId:    string | null;
+};
+
 type AgentData = {
   erc8004Id:       number;
   agentCardCid:    string;
@@ -17,15 +30,7 @@ type AgentData = {
   intentCount:     number;
   sharpe7d:        number;
   sharpeUpdatedAt: number | null;
-  intents: Array<{
-    intentHash:   string;
-    marketId:     string;
-    notionalUsdc: string;
-    venue:        number;
-    traceCid:     string;
-    submittedAt:  string;
-    blockNumber:  number;
-  }>;
+  intents: IntentRow[];
   slashes: Array<{
     bps:          number;
     usdcReleased: string;
@@ -296,29 +301,63 @@ export function LiveAgent({
           <p className="text-ink/30 text-sm py-4">No intents indexed yet.</p>
         )}
         {data?.intents.map((i) => {
-          const isLong = Number(i.notionalUsdc) >= 0;
+          const isLong   = Number(i.notionalUsdc) >= 0;
+          const notional = (Math.abs(Number(i.notionalUsdc)) / 1e6).toFixed(2);
+          const entry    = i.entryPricePx;
+          const close    = i.closePricePx;
+          const isLive   = !!i.hlOrderId;
+
+          // Compute P&L if we have both entry and close prices
+          let pnlEl: React.ReactNode = null;
+          if (entry && close) {
+            const pct       = (close - entry) / entry * 100 * (isLong ? 1 : -1);
+            const pnlUsdc   = pct / 100 * Number(notional);
+            const pnlColor  = pnlUsdc >= 0 ? "text-olive" : "text-terracotta";
+            pnlEl = (
+              <span className={`text-xs font-mono tabular-nums ${pnlColor}`}>
+                {pnlUsdc >= 0 ? "+" : ""}{pnlUsdc.toFixed(4)} USDC
+              </span>
+            );
+          } else if (entry && !close && isLive) {
+            pnlEl = <span className="text-xs text-ink/25 font-mono">open</span>;
+          }
+
           return (
-            <div key={i.intentHash} className="flex items-center justify-between py-3 border-b border-ink/5 group">
-              <div className="flex items-center gap-3 min-w-0">
-                <span className={`text-xs font-mono px-2 py-0.5 shrink-0 ${isLong ? "bg-olive/15 text-olive" : "bg-terracotta/15 text-terracotta"}`}>
-                  {isLong ? "LONG" : "SHORT"}
-                </span>
-                <span className="font-mono text-sm">{i.marketId}</span>
-                <span className="text-ink/40 text-xs font-mono hidden sm:inline">
-                  ${(Math.abs(Number(i.notionalUsdc)) / 1e6).toFixed(2)}
-                </span>
+            <div key={i.intentHash} className="py-3 border-b border-ink/5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`text-xs font-mono px-2 py-0.5 shrink-0 ${isLong ? "bg-olive/15 text-olive" : "bg-terracotta/15 text-terracotta"}`}>
+                    {isLong ? "LONG" : "SHORT"}
+                  </span>
+                  <span className="font-mono text-sm">{i.marketId}</span>
+                  <span className="text-ink/40 text-xs font-mono hidden sm:inline">
+                    ${notional}
+                  </span>
+                  {isLive && (
+                    <span className="text-[9px] font-mono text-olive/60 uppercase tracking-wider hidden sm:inline">
+                      HL live
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 shrink-0 ml-3">
+                  {pnlEl}
+                  <span className="text-xs text-ink/25 font-mono hidden sm:inline">
+                    {new Date(i.submittedAt).toLocaleTimeString()}
+                  </span>
+                  <Link
+                    href={`/traces/${i.intentHash}`}
+                    className="text-xs text-ink/30 hover:text-terracotta font-mono transition-colors"
+                  >
+                    {i.intentHash.slice(0, 10)}… ↗
+                  </Link>
+                </div>
               </div>
-              <div className="flex items-center gap-4 shrink-0 ml-3">
-                <span className="text-xs text-ink/25 font-mono hidden sm:inline">
-                  {new Date(i.submittedAt).toLocaleTimeString()}
-                </span>
-                <Link
-                  href={`/traces/${i.intentHash}`}
-                  className="text-xs text-ink/30 hover:text-terracotta font-mono transition-colors"
-                >
-                  {i.intentHash.slice(0, 10)}… ↗
-                </Link>
-              </div>
+              {entry && (
+                <div className="flex items-center gap-4 mt-1 text-[10px] font-mono text-ink/25">
+                  <span>entry ${entry.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</span>
+                  {close && <span>→ close ${close.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</span>}
+                </div>
+              )}
             </div>
           );
         })}
