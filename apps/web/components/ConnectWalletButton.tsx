@@ -1,59 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
+import { useWallet, HAS_CIRCLE } from "@/lib/wallet-context";
 
 export function ConnectWalletButton() {
-  const [address, setAddress] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const { address, walletType, connectCircle, connectInjected, disconnect } = useWallet();
+  const [connecting, setConnecting] = useState<"circle" | "injected" | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("phronos_wallet");
-    if (stored) setAddress(stored);
-
-    const eth = (window as any).ethereum;
-    if (!eth) return;
-    const handler = (accounts: string[]) => {
-      if (accounts.length === 0) {
-        localStorage.removeItem("phronos_wallet");
-        setAddress(null);
-      } else {
-        localStorage.setItem("phronos_wallet", accounts[0]!);
-        setAddress(accounts[0]!);
-      }
-    };
-    eth.on("accountsChanged", handler);
-    return () => eth.removeListener?.("accountsChanged", handler);
-  }, []);
-
-  async function connect() {
-    // MetaMask injects window.ethereum asynchronously — wait up to 500ms
-    let eth = (window as any).ethereum;
-    if (!eth) {
-      await new Promise(r => setTimeout(r, 500));
-      eth = (window as any).ethereum;
-    }
-    if (!eth) {
-      alert("No wallet detected. Install MetaMask or a Web3 wallet.");
-      return;
-    }
-    setConnecting(true);
-    try {
-      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
-      if (accounts[0]) {
-        localStorage.setItem("phronos_wallet", accounts[0]);
-        setAddress(accounts[0]);
-      }
-    } catch (err: any) {
-      if (err?.code !== 4001) console.error("[wallet] connect error:", err);
-    } finally {
-      setConnecting(false);
-    }
+  async function handleCircle() {
+    setConnecting("circle");
+    setError(null);
+    try { await connectCircle(); }
+    catch (e: any) { setError(e.message?.slice(0, 80) ?? "Passkey failed"); }
+    finally { setConnecting(null); }
   }
 
-  function disconnect() {
-    localStorage.removeItem("phronos_wallet");
-    setAddress(null);
+  async function handleInjected() {
+    setConnecting("injected");
+    setError(null);
+    try { await connectInjected(); }
+    catch (e: any) { setError(e.message?.slice(0, 80) ?? "Wallet connection failed"); }
+    finally { setConnecting(null); }
   }
 
   if (address) {
@@ -61,8 +30,11 @@ export function ConnectWalletButton() {
       <div className="flex items-center gap-1.5">
         <Link
           href={`/profile/${address}`}
-          className="text-xs font-mono text-ink/50 hover:text-ink transition-colors border border-ink/10 px-3 py-1.5"
+          className="flex items-center gap-1.5 text-xs font-mono text-ink/50 hover:text-ink border border-ink/10 px-3 py-1.5 transition-colors"
         >
+          {walletType === "circle-sca" && (
+            <span className="w-1.5 h-1.5 rounded-full bg-olive" title="Circle passkey wallet" />
+          )}
           {address.slice(0, 6)}…{address.slice(-4)}
         </Link>
         <button
@@ -76,13 +48,41 @@ export function ConnectWalletButton() {
     );
   }
 
+  if (HAS_CIRCLE) {
+    return (
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCircle}
+            disabled={!!connecting}
+            className="btn-primary text-sm py-2 px-4 disabled:opacity-50"
+          >
+            {connecting === "circle" ? "Creating passkey…" : "Passkey"}
+          </button>
+          <button
+            onClick={handleInjected}
+            disabled={!!connecting}
+            className="text-xs font-mono text-ink/40 hover:text-ink border border-ink/10 px-3 py-2 transition-colors disabled:opacity-40"
+          >
+            {connecting === "injected" ? "Connecting…" : "Wallet"}
+          </button>
+        </div>
+        {error && <p className="text-[10px] text-terracotta font-mono max-w-[200px] text-right">{error}</p>}
+      </div>
+    );
+  }
+
+  // No Circle env vars — existing single-button MetaMask flow
   return (
-    <button
-      onClick={connect}
-      disabled={connecting}
-      className="btn-primary text-sm py-2 px-4"
-    >
-      {connecting ? "Connecting…" : "Get in"}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={handleInjected}
+        disabled={!!connecting}
+        className="btn-primary text-sm py-2 px-4 disabled:opacity-50"
+      >
+        {connecting ? "Connecting…" : "Get in"}
+      </button>
+      {error && <p className="text-[10px] text-terracotta font-mono">{error}</p>}
+    </div>
   );
 }

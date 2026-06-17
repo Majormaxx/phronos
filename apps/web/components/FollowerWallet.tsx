@@ -4,16 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { createPublicClient, createWalletClient, custom, http, encodeFunctionData } from "viem";
 import { addresses, arcTestnet, CCTP_ARC_DOMAIN } from "@phronos/shared";
+import { useWallet } from "@/lib/wallet-context";
 
 const ROUTER = (process.env.NEXT_PUBLIC_PHRONOS_ROUTER_ADDR ?? "0x7988558ed4B654cFc3D89C352b41053ac1d14e3F") as `0x${string}`;
 const USDC   = addresses.USDC;
 
-// Circle modular wallets env vars (set in .env.local for Gas Station mode)
-const CIRCLE_CLIENT_KEY = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_KEY ?? "";
-const CIRCLE_CLIENT_URL = process.env.NEXT_PUBLIC_CIRCLE_CLIENT_URL ?? "";
-const CIRCLE_BUNDLER_URL = process.env.NEXT_PUBLIC_CIRCLE_BUNDLER_URL ?? "";
-
-const HAS_CIRCLE_WALLET = !!(CIRCLE_CLIENT_KEY && CIRCLE_CLIENT_URL && CIRCLE_BUNDLER_URL);
 
 const ERC20_ABI = [
   { name: "approve",   type: "function", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
@@ -112,42 +107,21 @@ interface Refusal {
   refusedAt:    string;
 }
 
-function getEth() {
-  const eth = (window as any).ethereum;
-  if (!eth) throw new Error("No wallet detected");
-  return eth;
-}
-
-function getPubClient() {
-  return createPublicClient({ chain: arcTestnet, transport: custom(getEth()) });
-}
-
-function getWalletClientEOA() {
-  return createWalletClient({ chain: arcTestnet, transport: custom(getEth()) });
-}
-
-async function switchToArc(): Promise<void> {
-  const wc = getWalletClientEOA();
-  try {
-    await wc.switchChain({ id: arcTestnet.id });
-  } catch (err: any) {
-    if (err.code === 4902) await wc.addChain({ chain: arcTestnet });
-  }
-}
 
 export function FollowerWallet() {
-  const [address,    setAddress]    = useState<string | null>(null);
+  // Wallet state from shared context — address, type, and SCA account
+  const { address, walletType, getSCAClient, getWalletClient } = useWallet();
+  const walletMode = walletType === "circle-sca" ? "circle-sca" : "metamask";
+
   const [escrow,     setEscrow]     = useState<bigint>(0n);
   const [usdcBal,    setUsdcBal]    = useState<bigint>(0n);
   const [copies,     setCopies]     = useState<Copy[]>([]);
   const [refusals,   setRefusals]   = useState<Refusal[]>([]);
   const [amount,     setAmount]     = useState("1");
-  const [step,       setStep]       = useState<"idle" | "approving" | "depositing" | "withdrawing" | "creating-sca" | "bridging">("idle");
+  const [step,       setStep]       = useState<"idle" | "approving" | "depositing" | "withdrawing" | "bridging">("idle");
   const [txHash,     setTxHash]     = useState<string | null>(null);
   const [error,      setError]      = useState<string | null>(null);
   const [loading,    setLoading]    = useState(false);
-  const [walletMode,    setWalletMode]    = useState<WalletMode>("metamask");
-  const [scaAccount,    setScaAccount]    = useState<any>(null);
   const [showBridge,    setShowBridge]    = useState(false);
   const [cctpBurnTx,    setCctpBurnTx]    = useState<string | null>(null);
   const [cctpStatus,    setCctpStatus]    = useState<"idle" | "polling" | "minting" | "done">("idle");
@@ -181,28 +155,10 @@ export function FollowerWallet() {
     } catch { /* non-fatal */ } finally { setLoading(false); }
   }, []);
 
+  // Load chain data whenever the wallet address changes
   useEffect(() => {
-    const stored = localStorage.getItem("phronos_wallet");
-    if (stored) { setAddress(stored); loadChainData(stored as `0x${string}`); loadActivity(stored); }
-
-    const eth = (window as any).ethereum;
-    if (!eth) return;
-    const handler = (accs: string[]) => {
-      const acc = accs[0] ?? null;
-      if (acc) {
-        localStorage.setItem("phronos_wallet", acc);
-        setAddress(acc);
-        loadChainData(acc as `0x${string}`);
-        loadActivity(acc);
-      } else {
-        localStorage.removeItem("phronos_wallet");
-        setAddress(null);
-        setScaAccount(null);
-      }
-    };
-    eth.on("accountsChanged", handler);
-    return () => eth.removeListener?.("accountsChanged", handler);
-  }, [loadChainData, loadActivity]);
+    if (address) { loadChainData(address as `0x${string}`); loadActivity(address); }
+  }, [address, loadChainData, loadActivity]);
 
   // ── CCTP V2 attestation polling + auto-mint on Arc ───────────────────────
   useEffect(() => {
@@ -254,17 +210,17 @@ export function FollowerWallet() {
     return () => clearInterval(id);
   }, [cctpStatus]);
 
-  // ── MetaMask EOA deposit (current mode) ────────────────────────────────────
   async function deposit() {
     if (!address) return;
+    // Circle SCA path: gasless UserOperation batch
     if (walletMode === "circle-sca") { await depositSCA(); return; }
+    // Injected wallet path
     setError(null);
     const amtMicro = BigInt(Math.round(parseFloat(amount) * 1e6));
     const acc = address as `0x${string}`;
     try {
-      await switchToArc();
-      const pub = getPubClient();
-      const wc  = getWalletClientEOA();
+      const pub = createPublicClient({ chain: arcTestnet, transport: http() });
+      const wc  = await getWalletClient();
 
       const allowance = await pub.readContract({ address: USDC, abi: ERC20_ABI, functionName: "allowance", args: [acc, ROUTER] });
       if (allowance < amtMicro) {
@@ -285,91 +241,25 @@ export function FollowerWallet() {
     }
   }
 
-  // ── Circle SCA / Gas Station deposit (gasless) ─────────────────────────────
-  // Uses Circle Modular Wallets SDK: passkey-based SCA + Arc Testnet Gas Station.
-  // Arc Testnet has a preconfigured Gas Station policy — no native gas required.
-  // Bundles approve + depositFollower into a single UserOperation.
-  async function createCircleSCAWallet(): Promise<void> {
-    if (!HAS_CIRCLE_WALLET) {
-      setError("Set NEXT_PUBLIC_CIRCLE_CLIENT_KEY, NEXT_PUBLIC_CIRCLE_CLIENT_URL, and NEXT_PUBLIC_CIRCLE_BUNDLER_URL to enable gas-free wallet.");
-      return;
-    }
-    setError(null);
-    setStep("creating-sca");
-    try {
-      const {
-        toCircleSmartAccount,
-        toPasskeyTransport,
-        toWebAuthnCredential,
-        WebAuthnMode,
-      } = await import("@circle-fin/modular-wallets-core");
-
-      const transport   = toPasskeyTransport(CIRCLE_CLIENT_URL, CIRCLE_CLIENT_KEY);
-      // Register a new passkey (WebAuthn credential) for this follower
-      const credential  = await toWebAuthnCredential({ transport, username: "phronos-follower", mode: WebAuthnMode.Register });
-      const pubClient   = createPublicClient({ chain: arcTestnet, transport: http() });
-      const account     = await toCircleSmartAccount({ client: pubClient, owner: credential });
-
-      setScaAccount(account);
-      setAddress(account.address);
-      setWalletMode("circle-sca");
-      localStorage.setItem("phronos_wallet", account.address);
-      await loadChainData(account.address as `0x${string}`);
-      await loadActivity(account.address);
-      setStep("idle");
-    } catch (e: any) {
-      setError(e.message ?? "Failed to create Circle SCA wallet");
-      setStep("idle");
-    }
-  }
-
+  // ── Gasless SCA deposit via Circle context ───────────────────────────────
+  // Bundles approve + depositFollower into a single gasless UserOperation.
   async function depositSCA(): Promise<void> {
-    if (!scaAccount) { setError("Create a gas-free wallet first"); return; }
     setError(null);
     const amtMicro = BigInt(Math.round(parseFloat(amount) * 1e6));
     try {
-      const {
-        toCircleModularWalletClient,
-      } = await import("@circle-fin/modular-wallets-core");
-
-      // Create bundler-backed wallet client for ERC-4337 UserOperation flow.
-      // Arc Testnet Gas Station automatically sponsors gas for SCA wallets.
-      const walletClient = createWalletClient({
-        account: scaAccount,
-        chain:   arcTestnet,
-        transport: http(CIRCLE_BUNDLER_URL),
-      });
-      const modularClient = toCircleModularWalletClient({ client: walletClient });
-
+      const sca = await getSCAClient();
+      if (!sca) { setError("No Circle SCA wallet connected"); return; }
       setStep("depositing");
-
-      // Batch: approve USDC + depositFollower in one gasless UserOperation
-      const hash = await (modularClient as any).sendUserOperation({
+      const hash = await (sca as any).sendUserOperation({
         calls: [
-          {
-            to:   USDC,
-            data: encodeFunctionData({
-              abi:          ERC20_ABI,
-              functionName: "approve",
-              args:         [ROUTER, amtMicro],
-            }),
-          },
-          {
-            to:   ROUTER,
-            data: encodeFunctionData({
-              abi:          ROUTER_ABI,
-              functionName: "depositFollower",
-              args:         [amtMicro],
-            }),
-          },
+          { to: USDC,   data: encodeFunctionData({ abi: ERC20_ABI,  functionName: "approve",          args: [ROUTER, amtMicro] }) },
+          { to: ROUTER, data: encodeFunctionData({ abi: ROUTER_ABI, functionName: "depositFollower",   args: [amtMicro] }) },
         ],
-        paymaster: true, // Gas Station sponsors gas — no USDC for gas needed
+        paymaster: true,
       });
-
       setTxHash(typeof hash === "string" ? hash : (hash as any).userOpHash ?? "");
       setStep("idle");
-      await loadChainData(scaAccount.address as `0x${string}`);
-      await loadActivity(scaAccount.address);
+      if (address) { await loadChainData(address as `0x${string}`); await loadActivity(address); }
     } catch (e: any) {
       setError(e.message ?? "Gasless transaction failed");
       setStep("idle");
@@ -381,8 +271,7 @@ export function FollowerWallet() {
     setError(null);
     const acc = address as `0x${string}`;
     try {
-      await switchToArc();
-      const wc = getWalletClientEOA();
+      const wc = await getWalletClient();
       setStep("withdrawing");
       const hash = await wc.writeContract({ address: ROUTER, abi: ROUTER_ABI, functionName: "withdrawFollower", args: [escrow], account: acc, chain: arcTestnet });
       setTxHash(hash);
@@ -468,16 +357,7 @@ export function FollowerWallet() {
       <div className="border border-ink/10 p-6 bg-ink/[0.02] text-center">
         <p className="text-sm font-medium mb-1">Connect your wallet to start copying</p>
         <p className="text-xs text-ink/50 mb-4">Deposit USDC escrow, pick an agent, and every intent they emit gets copied to your account after three policy checks pass.</p>
-        {HAS_CIRCLE_WALLET && (
-          <button
-            onClick={createCircleSCAWallet}
-            disabled={step !== "idle"}
-            className="btn-primary text-xs py-1.5 px-4 mr-3 disabled:opacity-50"
-          >
-            {step === "creating-sca" ? "Creating wallet…" : "Gas-free wallet ↗"}
-          </button>
-        )}
-        <p className="text-xs text-ink/30 mt-3">Or use the <span className="text-terracotta">Connect wallet</span> button in the top-right nav.</p>
+        <p className="text-xs text-ink/40">Use the <span className="font-medium text-ink/70">Passkey</span> or <span className="font-medium text-ink/70">Wallet</span> button in the top-right nav to connect.</p>
         {error && <p className="text-xs text-terracotta mt-3">{error}</p>}
       </div>
     );
@@ -559,14 +439,11 @@ export function FollowerWallet() {
             >
               From another chain ↓
             </button>
-            {HAS_CIRCLE_WALLET && walletMode === "metamask" && (
-              <button
-                onClick={createCircleSCAWallet}
-                disabled={step !== "idle"}
-                className="text-olive hover:text-olive/80 transition-colors disabled:opacity-50"
-              >
-                {step === "creating-sca" ? "Creating…" : "Use gas-free wallet"}
-              </button>
+            {walletMode === "circle-sca" && (
+              <span className="text-olive flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-olive inline-block animate-pulse" />
+                gasless
+              </span>
             )}
           </div>
         </div>

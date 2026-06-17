@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
 import {
-  createPublicClient, createWalletClient, custom, http,
-  keccak256, toHex, parseAbi,
+  createPublicClient, http,
+  keccak256, toHex,
 } from "viem";
 import { arcTestnet } from "@phronos/shared";
+import { useWallet } from "@/lib/wallet-context";
 
 const ROUTER_ABI = [{
   name: "submitIntent",
@@ -50,6 +51,7 @@ export function SubmitIntentPanel({
   routerAddress:   string;
   strategySpecCid: string;
 }) {
+  const { address: walletAddr, walletType, getWalletClient } = useWallet();
   const [market,    setMarket]    = useState<Market>("BTC");
   const [isLong,    setIsLong]    = useState(true);
   const [notional,  setNotional]  = useState("10");
@@ -58,11 +60,21 @@ export function SubmitIntentPanel({
   const [txHash,    setTxHash]    = useState<string | null>(null);
   const [errMsg,    setErrMsg]    = useState<string | null>(null);
 
-  async function submit() {
-    const eth = (window as any).ethereum;
-    if (!eth) { setErrMsg("No wallet detected."); return; }
+  // Circle SCA wallets use P-256 (secp256r1) — the Router verifies via ecrecover (secp256k1).
+  // These are incompatible without EIP-1271 in the Router contract.
+  if (walletType === "circle-sca") {
+    return (
+      <div className="border border-ink/10 p-5 mb-8">
+        <p className="text-xs font-mono text-ink/50 mb-2">Intent signing requires an EOA wallet</p>
+        <p className="text-xs text-ink/30 leading-relaxed">
+          Circle passkey wallets use a different signing curve (P-256) than the one Phronos Router
+          verifies on-chain (secp256k1). Switch to MetaMask or any EVM wallet to submit signals.
+        </p>
+      </div>
+    );
+  }
 
-    const walletAddr = localStorage.getItem("phronos_wallet");
+  async function submit() {
     if (!walletAddr) { setErrMsg("Connect your wallet first."); return; }
 
     setState("signing");
@@ -88,9 +100,7 @@ export function SubmitIntentPanel({
       const strategyHash  = keccak256(toHex(strategySpecCid)) as `0x${string}`;
       const marketId      = keccak256(toHex(market)) as `0x${string}`;
 
-      const wc = createWalletClient({ transport: custom(eth), chain: arcTestnet });
-      try { await wc.switchChain({ id: arcTestnet.id }); }
-      catch (e: any) { if (e.code === 4902) await wc.addChain({ chain: arcTestnet }); }
+      const wc = await getWalletClient();
 
       const intentMsg = {
         erc8004Id:    BigInt(agentId),

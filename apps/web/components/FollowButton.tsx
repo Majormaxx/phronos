@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createWalletClient, custom, parseAbi } from "viem";
+import { createPublicClient, http, parseAbi } from "viem";
 import { arcTestnet } from "@phronos/shared";
+import { useWallet } from "@/lib/wallet-context";
 
 const ROUTER = (process.env.NEXT_PUBLIC_PHRONOS_ROUTER_ADDR ?? "0x7988558ed4B654cFc3D89C352b41053ac1d14e3F") as `0x${string}`;
 
@@ -16,55 +17,57 @@ interface Props {
 }
 
 export function FollowButton({ erc8004Id, agentName }: Props) {
-  const [address,      setAddress]      = useState<string | null>(null);
+  const { address, walletType, getWalletClient, getSCAClient } = useWallet();
   const [following,    setFollowing]    = useState(false);
   const [justFollowed, setJustFollowed] = useState(false);
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("phronos_wallet");
-    if (!stored) return;
-    setAddress(stored);
-
-    fetch(`/api/policies?follower=${stored}`)
+    if (!address) return;
+    fetch(`/api/policies?follower=${address}`)
       .then(r => r.ok ? r.json() : [])
       .then((rows: { erc8004Id: number }[]) => {
         if (rows.some(r => Number(r.erc8004Id) === erc8004Id)) setFollowing(true);
       })
       .catch(() => {});
-  }, [erc8004Id]);
+  }, [address, erc8004Id]);
 
   async function handleFollow() {
     if (!address) {
       alert("Connect your wallet first — use the button in the top-right nav.");
       return;
     }
-    const eth = (window as any).ethereum;
-    if (!eth) {
-      alert("No wallet detected.");
-      return;
-    }
     setLoading(true);
     setError(null);
     try {
-      // Step 1: set copyActive on-chain
-      const wc = createWalletClient({ transport: custom(eth), chain: arcTestnet });
-      try {
-        await wc.switchChain({ id: arcTestnet.id });
-      } catch (err: any) {
-        if (err.code === 4902) await wc.addChain({ chain: arcTestnet });
+      if (walletType === "circle-sca") {
+        // Gasless via sendUserOperation
+        const sca = await getSCAClient();
+        if (!sca) throw new Error("SCA client unavailable");
+        const { encodeFunctionData } = await import("viem");
+        await (sca as any).sendUserOperation({
+          calls: [{
+            to:   ROUTER,
+            data: encodeFunctionData({ abi: ROUTER_ABI, functionName: "activateCopy", args: [BigInt(erc8004Id)] }),
+          }],
+          paymaster: true,
+        });
+      } else {
+        // Injected wallet — standard writeContract
+        const wc         = await getWalletClient();
+        const pubClient  = createPublicClient({ chain: arcTestnet, transport: http() });
+        const { request } = await pubClient.simulateContract({
+          address:      ROUTER,
+          abi:          ROUTER_ABI,
+          functionName: "activateCopy",
+          args:         [BigInt(erc8004Id)],
+          account:      address as `0x${string}`,
+        });
+        await wc.writeContract(request);
       }
-      await wc.writeContract({
-        address:      ROUTER,
-        abi:          ROUTER_ABI,
-        functionName: "activateCopy",
-        args:         [BigInt(erc8004Id)],
-        account:      address as `0x${string}`,
-        chain:        arcTestnet,
-      });
 
-      // Step 2: register in DB so router worker picks it up in demo mode
+      // Register in DB so router worker picks it up
       const res = await fetch("/api/policies", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -72,11 +75,12 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Policy registration failed");
+
       setFollowing(true);
       setJustFollowed(true);
       setTimeout(() => setJustFollowed(false), 800);
     } catch (e: any) {
-      setError(e.message ?? "Something went wrong");
+      setError(e.shortMessage ?? e.message ?? "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -89,9 +93,7 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
           <span className="w-2 h-2 rounded-full bg-olive inline-block animate-pulse" />
           Copying {agentName}
         </span>
-        <span className="text-xs text-ink/30">
-          — every signed intent gets copied to your escrow
-        </span>
+        <span className="text-xs text-ink/30">— every signed intent gets copied to your escrow</span>
       </div>
     );
   }

@@ -3,10 +3,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  createPublicClient, createWalletClient, custom, http,
-  parseAbi, keccak256, toHex,
+  createPublicClient, http,
+  parseAbi, keccak256, toHex, encodeFunctionData,
 } from "viem";
 import { arcTestnet, addresses, getDeployedAddresses } from "@phronos/shared";
+import { useWallet } from "@/lib/wallet-context";
 
 const ERC8004_ABI = parseAbi([
   "function registerAgent(address operator, string agentCardCid) external returns (uint256 agentId)",
@@ -36,6 +37,8 @@ interface TxStatus {
 export function CreateAgentFlow() {
   const router = useRouter();
 
+  const { address: walletAddr, walletType, getWalletClient, getSCAClient } = useWallet();
+
   // form fields
   const [name,        setName]        = useState("");
   const [description, setDescription] = useState("");
@@ -43,18 +46,12 @@ export function CreateAgentFlow() {
   const [strategy,    setStrategy]    = useState<typeof STRATS[number]>("Momentum");
   const [bondUsd,     setBondUsd]     = useState("5");
 
-  // wallet + deploy state
-  const [walletAddr,  setWalletAddr]  = useState<string | null>(null);
+  // deploy state
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
   const [step,        setStep]        = useState<Step>(1);
   const [newAgentId,  setNewAgentId]  = useState<number | null>(null);
   const [txStatuses,  setTxStatuses]  = useState<TxStatus[]>([]);
   const [deployError, setDeployError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const stored = localStorage.getItem("phronos_wallet");
-    if (stored) setWalletAddr(stored);
-  }, []);
 
   useEffect(() => {
     if (!walletAddr || step !== 2) return;
@@ -71,43 +68,42 @@ export function CreateAgentFlow() {
 
   async function deploy() {
     setDeployError(null);
-    const eth = (window as any).ethereum;
-    if (!eth || !walletAddr) { setDeployError("Connect your wallet first."); return; }
+    if (!walletAddr) { setDeployError("Connect your wallet first."); return; }
 
     const bondAmount = Math.round(parseFloat(bondUsd) * 1_000_000);
     if (bondAmount < 2_000_000) { setDeployError("Minimum bond is $2 USDC."); return; }
 
     const { registry: registryAddr, bond: bondAddr } = getDeployedAddresses();
 
-    const agentCardObj = {
-      name, description, market, strategyType: strategy, version: "1",
-      createdAt: new Date().toISOString(),
-    };
-    const strategySpecObj = {
-      type: strategy, market, description,
-    };
+    const agentCardObj = { name, description, market, strategyType: strategy, version: "1", createdAt: new Date().toISOString() };
+    const strategySpecObj = { type: strategy, market, description };
     const agentCardCidStr    = `phronos:agent-card:${keccak256(toHex(JSON.stringify(agentCardObj)))}`;
     const strategySpecCidStr = `phronos:strategy:${keccak256(toHex(JSON.stringify(strategySpecObj)))}`;
 
-    const initStatuses: TxStatus[] = [
-      { label: "Mint ERC-8004 identity",        state: "pending" },
-      { label: "Register with Phronos",          state: "pending" },
-      { label: "Approve USDC",                   state: "pending" },
-      { label: "Post bond",                      state: "pending" },
-    ];
+    const isSCA = walletType === "circle-sca";
+    const initStatuses: TxStatus[] = isSCA
+      ? [
+          { label: "Mint ERC-8004 identity (gasless)",              state: "pending" },
+          { label: "Register with Phronos",                          state: "pending" },
+          { label: "Approve USDC + post bond (1 gasless operation)", state: "pending" },
+        ]
+      : [
+          { label: "Mint ERC-8004 identity",  state: "pending" },
+          { label: "Register with Phronos",   state: "pending" },
+          { label: "Approve USDC",            state: "pending" },
+          { label: "Post bond",               state: "pending" },
+        ];
     setTxStatuses(initStatuses);
     setStep(3);
 
     try {
       const pubClient = createPublicClient({ chain: arcTestnet, transport: http() });
-      const wc = createWalletClient({ transport: custom(eth), chain: arcTestnet });
-      try { await wc.switchChain({ id: arcTestnet.id }); }
-      catch (e: any) { if (e.code === 4902) await wc.addChain({ chain: arcTestnet }); }
 
       // ── Tx 1: mint ERC-8004 ──────────────────────────────────────────────
       setTxState(0, { state: "loading" });
       let agentId: bigint;
       try {
+        // Simulate to get the predicted agentId, then execute
         const { result, request } = await pubClient.simulateContract({
           address: addresses.IDENTITY_REGISTRY, abi: ERC8004_ABI,
           functionName: "registerAgent",
@@ -115,8 +111,20 @@ export function CreateAgentFlow() {
           account: walletAddr as `0x${string}`,
         });
         agentId = result as bigint;
-        const hash = await wc.writeContract(request);
-        await pubClient.waitForTransactionReceipt({ hash });
+
+        if (isSCA) {
+          const sca = await getSCAClient();
+          await (sca as any).sendUserOperation({
+            calls: [{ to: addresses.IDENTITY_REGISTRY, data: encodeFunctionData({ abi: ERC8004_ABI, functionName: "registerAgent", args: [walletAddr as `0x${string}`, agentCardCidStr] }) }],
+            paymaster: true,
+          });
+          // Brief pause to let the UserOp be included before the next step
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          const wc   = await getWalletClient();
+          const hash = await wc.writeContract(request);
+          await pubClient.waitForTransactionReceipt({ hash });
+        }
         setTxState(0, { state: "done" });
       } catch (e: any) {
         setTxState(0, { state: "error", error: e.shortMessage ?? e.message });
@@ -126,51 +134,70 @@ export function CreateAgentFlow() {
       // ── Tx 2: register in PhronosRegistry ────────────────────────────────
       setTxState(1, { state: "loading" });
       try {
-        const { request } = await pubClient.simulateContract({
-          address: registryAddr as `0x${string}`, abi: REGISTRY_ABI,
-          functionName: "register",
-          args: [agentId, agentCardCidStr, strategySpecCidStr],
-          account: walletAddr as `0x${string}`,
-        });
-        const hash = await wc.writeContract(request);
-        await pubClient.waitForTransactionReceipt({ hash });
+        if (isSCA) {
+          const sca = await getSCAClient();
+          await (sca as any).sendUserOperation({
+            calls: [{ to: registryAddr, data: encodeFunctionData({ abi: REGISTRY_ABI, functionName: "register", args: [agentId!, agentCardCidStr, strategySpecCidStr] }) }],
+            paymaster: true,
+          });
+          await new Promise(r => setTimeout(r, 3000));
+        } else {
+          const wc = await getWalletClient();
+          const { request } = await pubClient.simulateContract({
+            address: registryAddr as `0x${string}`, abi: REGISTRY_ABI,
+            functionName: "register",
+            args: [agentId!, agentCardCidStr, strategySpecCidStr],
+            account: walletAddr as `0x${string}`,
+          });
+          const hash = await wc.writeContract(request);
+          await pubClient.waitForTransactionReceipt({ hash });
+        }
         setTxState(1, { state: "done" });
       } catch (e: any) {
         setTxState(1, { state: "error", error: e.shortMessage ?? e.message });
         throw e;
       }
 
-      // ── Tx 3: approve USDC ───────────────────────────────────────────────
+      // ── Tx 3 (+ 4 for SCA): approve USDC [+ post bond] ──────────────────
       setTxState(2, { state: "loading" });
       try {
-        const { request } = await pubClient.simulateContract({
-          address: addresses.USDC, abi: USDC_ABI,
-          functionName: "approve",
-          args: [bondAddr as `0x${string}`, BigInt(bondAmount)],
-          account: walletAddr as `0x${string}`,
-        });
-        const hash = await wc.writeContract(request);
-        await pubClient.waitForTransactionReceipt({ hash });
-        setTxState(2, { state: "done" });
-      } catch (e: any) {
-        setTxState(2, { state: "error", error: e.shortMessage ?? e.message });
-        throw e;
-      }
+        if (isSCA) {
+          // Batch approve + postBond into one gasless UserOperation
+          const sca = await getSCAClient();
+          await (sca as any).sendUserOperation({
+            calls: [
+              { to: addresses.USDC,           data: encodeFunctionData({ abi: USDC_ABI,  functionName: "approve",  args: [bondAddr as `0x${string}`, BigInt(bondAmount)] }) },
+              { to: bondAddr as `0x${string}`, data: encodeFunctionData({ abi: BOND_ABI, functionName: "postBond", args: [agentId!, BigInt(bondAmount)] }) },
+            ],
+            paymaster: true,
+          });
+          setTxState(2, { state: "done" });
+        } else {
+          // ── Tx 3: approve ────────────────────────────────────────────────
+          const wc3 = await getWalletClient();
+          const { request: req3 } = await pubClient.simulateContract({
+            address: addresses.USDC, abi: USDC_ABI,
+            functionName: "approve",
+            args: [bondAddr as `0x${string}`, BigInt(bondAmount)],
+            account: walletAddr as `0x${string}`,
+          });
+          await pubClient.waitForTransactionReceipt({ hash: await wc3.writeContract(req3) });
+          setTxState(2, { state: "done" });
 
-      // ── Tx 4: post bond ──────────────────────────────────────────────────
-      setTxState(3, { state: "loading" });
-      try {
-        const { request } = await pubClient.simulateContract({
-          address: bondAddr as `0x${string}`, abi: BOND_ABI,
-          functionName: "postBond",
-          args: [agentId, BigInt(bondAmount)],
-          account: walletAddr as `0x${string}`,
-        });
-        const hash = await wc.writeContract(request);
-        await pubClient.waitForTransactionReceipt({ hash });
-        setTxState(3, { state: "done" });
+          // ── Tx 4: post bond ──────────────────────────────────────────────
+          setTxState(3, { state: "loading" });
+          const wc4 = await getWalletClient();
+          const { request: req4 } = await pubClient.simulateContract({
+            address: bondAddr as `0x${string}`, abi: BOND_ABI,
+            functionName: "postBond",
+            args: [agentId!, BigInt(bondAmount)],
+            account: walletAddr as `0x${string}`,
+          });
+          await pubClient.waitForTransactionReceipt({ hash: await wc4.writeContract(req4) });
+          setTxState(3, { state: "done" });
+        }
       } catch (e: any) {
-        setTxState(3, { state: "error", error: e.shortMessage ?? e.message });
+        setTxState(isSCA ? 2 : 3, { state: "error", error: e.shortMessage ?? e.message });
         throw e;
       }
 
