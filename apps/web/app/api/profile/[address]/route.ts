@@ -31,14 +31,14 @@ export async function GET(_req: Request, { params }: { params: { address: string
   const agentRows = await sql`
     SELECT a.erc8004_id, a.active_since, a.agent_card_cid,
            m.name, m.description, m.strategy_type, m.market,
-           COUNT(DISTINCT s.block_number)  AS slash_count,
-           COUNT(DISTINCT i.intent_hash)   AS intent_count,
-           COUNT(DISTINCT p.follower_addr) AS follower_count
+           COUNT(DISTINCT s.block_number)   AS slash_count,
+           COUNT(DISTINCT i.intent_hash)    AS intent_count,
+           COUNT(DISTINCT c.follower_addr)  AS follower_count
     FROM agents a
     LEFT JOIN agent_metadata m ON m.erc8004_id = a.erc8004_id
     LEFT JOIN slashes  s ON s.erc8004_id = a.erc8004_id
     LEFT JOIN intents  i ON i.erc8004_id = a.erc8004_id
-    LEFT JOIN policies p ON p.erc8004_id = a.erc8004_id
+    LEFT JOIN copies   c ON c.intent_hash = i.intent_hash
     WHERE LOWER(a.operator_addr) = ${address}
     GROUP BY a.erc8004_id, a.active_since, a.agent_card_cid,
              m.name, m.description, m.strategy_type, m.market
@@ -56,26 +56,44 @@ export async function GET(_req: Request, { params }: { params: { address: string
     follower_count: string;
   }>;
 
-  // Enrich with on-chain data (bond, sharpe, fees) in parallel
+  function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+    return Promise.race([p.catch(() => null), new Promise<null>(r => setTimeout(() => r(null), ms))]);
+  }
+
+  // Enrich with on-chain data (bond, sharpe, fees) in parallel — 4s timeout per read
   const ownedAgents = await Promise.all(agentRows.map(async row => {
     const id = Number(row.erc8004_id);
-    let bondLive = 0;
+    let bondLive: number | null = null;
     let sharpe7d = 0;
     let feesUsdc = 0;
 
-    await Promise.allSettled([
-      bondContract && client.readContract({
-        address: bondContract, abi: BOND_ABI, functionName: "bondBalanceOf", args: [BigInt(id)],
-      }).then(b => { bondLive = Number(b as bigint) / 1e6; }),
+    await Promise.all([
+      withTimeout(
+        bondContract
+          ? client.readContract({ address: bondContract, abi: BOND_ABI, functionName: "bondBalanceOf", args: [BigInt(id)] })
+              .then(b => { bondLive = Number(b as bigint) / 1e6; })
+          : Promise.resolve(),
+        4_000,
+      ),
+      withTimeout(
+        slashOracle
+          ? client.readContract({ address: slashOracle, abi: ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(id)] })
+              .then(([s]) => { sharpe7d = Number(s as bigint) / 1e18; })
+          : Promise.resolve(),
+        4_000,
+      ),
 
-      slashOracle && client.readContract({
-        address: slashOracle, abi: ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(id)],
-      }).then(([s]) => { sharpe7d = Number(s as bigint) / 1e18; }),
-
-      routerAddr && client.readContract({
-        address: routerAddr, abi: ROUTER_ABI, functionName: "feesAccrued", args: [BigInt(id)],
-      }).then(f => { feesUsdc = Number(f as bigint) / 1e6; }),
+      withTimeout(
+        routerAddr
+          ? client.readContract({ address: routerAddr, abi: ROUTER_ABI, functionName: "feesAccrued", args: [BigInt(id)] })
+              .then(f => { feesUsdc = Number(f as bigint) / 1e6; })
+          : Promise.resolve(),
+        4_000,
+      ),
     ]);
+
+    // Fall back to DB bond if on-chain timed out
+    if (bondLive === null) bondLive = 0;
 
     const sc = Number(row.slash_count);
     const ic = Number(row.intent_count);
