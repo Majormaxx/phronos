@@ -62,12 +62,3 @@ export const TIER_META: Record<Tier, {
   },
 };
 
-export function TierChip({ tier }: { tier: Tier }) {
-  const m = TIER_META[tier];
-  if (tier === "scout") return null; // no chip for default state
-  return (
-    <span className={`text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 border ${m.color} ${m.bg} ${m.border}`}>
-      {m.label}
-    </span>
-  );
-}
