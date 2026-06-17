@@ -40,25 +40,29 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     return Promise.race([p.catch(() => null), new Promise<null>(r => setTimeout(() => r(null), ms))]);
   }
 
-  await Promise.all([
+  const [sharpeRaw, bondRaw] = await Promise.all([
     withTimeout(
       slashOracle
         ? client.readContract({ address: slashOracle, abi: SLASH_ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(id)] })
-            .then(([s, u]) => { sharpe7d = Number(s as bigint) / 1e18; sharpeUpdatedAt = Number(u as bigint); })
-        : Promise.resolve(),
+        : Promise.resolve(null),
       4_000,
     ),
     withTimeout(
       bondContract
         ? client.readContract({ address: bondContract, abi: BOND_ABI, functionName: "bondBalanceOf", args: [BigInt(id)] })
-            .then(b => { bondLive = Number(b as bigint) / 1e6; })
-        : Promise.resolve(),
+        : Promise.resolve(null),
       4_000,
     ),
   ]);
 
-  // Fall back to DB bond projection if on-chain read timed out
-  if (bondLive === null) bondLive = Number(bondRows[0]?.usdcEquiv ?? "0") / 1e6;
+  if (sharpeRaw !== null && Array.isArray(sharpeRaw)) {
+    sharpe7d        = Number((sharpeRaw as [bigint, bigint])[0]) / 1e18;
+    sharpeUpdatedAt = Number((sharpeRaw as [bigint, bigint])[1]);
+  }
+  // Fall back to DB bond if on-chain timed out
+  bondLive = bondRaw !== null
+    ? Number(bondRaw as bigint) / 1e6
+    : Number(bondRows[0]?.usdcEquiv ?? "0") / 1e6;
 
   return NextResponse.json({
     erc8004Id:       agent.erc8004Id,

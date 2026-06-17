@@ -51,39 +51,42 @@ export async function GET() {
         `,
       ]);
 
-      // On-chain reads with 4-second timeout — Arc RPC can be slow from cloud environments
-      const bondUsdc   = Number(bondRows[0]?.usdcEquiv ?? "0") / 1e6;
-      let sharpe7d        = 0;
-      let sharpeUpdatedAt: number | null = null;
-      let feesUsdc        = 0;
-      let bondLive: number | null        = null;
+      // On-chain reads with 4-second timeout — Arc RPC can be slow from cloud environments.
+      // Return values directly (avoid closure side-effect pattern which can silently fail).
+      const bondUsdc = Number(bondRows[0]?.usdcEquiv ?? "0") / 1e6;
 
-      await Promise.all([
+      const [sharpeRaw, feesRaw, bondRaw] = await Promise.all([
         withTimeout(
           slashOracle
             ? client.readContract({ address: slashOracle, abi: SLASH_ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(a.erc8004Id)] })
-                .then(([s, u]) => { sharpe7d = Number(s as bigint) / 1e18; sharpeUpdatedAt = Number(u as bigint); })
-            : Promise.resolve(),
+            : Promise.resolve(null),
           4_000,
         ),
         withTimeout(
           router
             ? client.readContract({ address: router, abi: ROUTER_ABI, functionName: "feesAccrued", args: [BigInt(a.erc8004Id)] })
-                .then(f => { feesUsdc = Number(f as bigint) / 1e6; })
-            : Promise.resolve(),
+            : Promise.resolve(null),
           4_000,
         ),
         withTimeout(
           bondContract
             ? client.readContract({ address: bondContract, abi: BOND_ABI, functionName: "bondBalanceOf", args: [BigInt(a.erc8004Id)] })
-                .then(b => { bondLive = Number(b as bigint) / 1e6; })
-            : Promise.resolve(),
+            : Promise.resolve(null),
           4_000,
         ),
       ]);
 
-      // If on-chain bond read timed out, fall back to DB projection (updated by indexer on slashes)
-      if (bondLive === null) bondLive = bondUsdc;
+      let sharpe7d        = 0;
+      let sharpeUpdatedAt: number | null = null;
+      let feesUsdc        = 0;
+      let bondLive: number               = bondUsdc; // DB fallback if on-chain times out
+
+      if (sharpeRaw !== null && Array.isArray(sharpeRaw)) {
+        sharpe7d        = Number((sharpeRaw as [bigint, bigint])[0]) / 1e18;
+        sharpeUpdatedAt = Number((sharpeRaw as [bigint, bigint])[1]);
+      }
+      if (feesRaw   !== null) feesUsdc = Number(feesRaw as bigint) / 1e6;
+      if (bondRaw   !== null) bondLive = Number(bondRaw as bigint) / 1e6;
 
       const sc = Number(slashCount[0]?.count ?? 0);
       const ic = Number(intentCount[0]?.count ?? 0);

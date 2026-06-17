@@ -63,37 +63,32 @@ export async function GET(_req: Request, { params }: { params: { address: string
   // Enrich with on-chain data (bond, sharpe, fees) in parallel — 4s timeout per read
   const ownedAgents = await Promise.all(agentRows.map(async row => {
     const id = Number(row.erc8004_id);
-    let bondLive: number | null = null;
-    let sharpe7d = 0;
-    let feesUsdc = 0;
-
-    await Promise.all([
+    const [bondRaw, sharpeRaw, feesRaw] = await Promise.all([
       withTimeout(
         bondContract
           ? client.readContract({ address: bondContract, abi: BOND_ABI, functionName: "bondBalanceOf", args: [BigInt(id)] })
-              .then(b => { bondLive = Number(b as bigint) / 1e6; })
-          : Promise.resolve(),
+          : Promise.resolve(null),
         4_000,
       ),
       withTimeout(
         slashOracle
           ? client.readContract({ address: slashOracle, abi: ORACLE_ABI, functionName: "sharpeOf", args: [BigInt(id)] })
-              .then(([s]) => { sharpe7d = Number(s as bigint) / 1e18; })
-          : Promise.resolve(),
+          : Promise.resolve(null),
         4_000,
       ),
-
       withTimeout(
         routerAddr
           ? client.readContract({ address: routerAddr, abi: ROUTER_ABI, functionName: "feesAccrued", args: [BigInt(id)] })
-              .then(f => { feesUsdc = Number(f as bigint) / 1e6; })
-          : Promise.resolve(),
+          : Promise.resolve(null),
         4_000,
       ),
     ]);
 
-    // Fall back to DB bond if on-chain timed out
-    if (bondLive === null) bondLive = 0;
+    const bondLive = bondRaw !== null ? Number(bondRaw as bigint) / 1e6 : 0;
+    const sharpe7d = (sharpeRaw !== null && Array.isArray(sharpeRaw))
+      ? Number((sharpeRaw as [bigint, bigint])[0]) / 1e18
+      : 0;
+    const feesUsdc = feesRaw !== null ? Number(feesRaw as bigint) / 1e6 : 0;
 
     const sc = Number(row.slash_count);
     const ic = Number(row.intent_count);
