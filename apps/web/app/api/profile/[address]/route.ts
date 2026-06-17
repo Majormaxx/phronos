@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { rawSql } from "@phronos/db";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { parseAbi } from "viem";
+import { computeTier } from "@/lib/tiers";
 
 const ORACLE_ABI = parseAbi([
   "function sharpeOf(uint256 erc8004Id) external view returns (int256 sharpe, uint64 updatedAt)",
@@ -76,6 +77,9 @@ export async function GET(_req: Request, { params }: { params: { address: string
       }).then(f => { feesUsdc = Number(f as bigint) / 1e6; }),
     ]);
 
+    const sc = Number(row.slash_count);
+    const ic = Number(row.intent_count);
+    const fc = Number(row.follower_count);
     return {
       erc8004Id:     id,
       name:          row.name ?? `Agent #${id}`,
@@ -86,9 +90,10 @@ export async function GET(_req: Request, { params }: { params: { address: string
       bondLive,
       sharpe7d,
       feesUsdc,
-      slashCount:    Number(row.slash_count),
-      intentCount:   Number(row.intent_count),
-      followerCount: Number(row.follower_count),
+      slashCount:    sc,
+      intentCount:   ic,
+      followerCount: fc,
+      tier:          computeTier({ intentCount: ic, sharpe7d, slashCount: sc, followerCount: fc }),
     };
   }));
 

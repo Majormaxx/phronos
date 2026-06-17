@@ -355,7 +355,7 @@ export function LiveAgent({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-4 shrink-0 ml-3">
+                <div className="flex items-center gap-3 shrink-0 ml-3">
                   {pnlEl}
                   <span className="text-xs text-ink/25 font-mono hidden sm:inline">
                     {new Date(i.submittedAt).toLocaleTimeString()}
@@ -364,7 +364,7 @@ export function LiveAgent({
                     href={`/traces/${i.intentHash}`}
                     className="text-xs text-ink/30 hover:text-terracotta font-mono transition-colors"
                   >
-                    {i.intentHash.slice(0, 10)}… ↗
+                    trace ↗
                   </Link>
                 </div>
               </div>

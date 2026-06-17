@@ -2,10 +2,11 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 import { NextResponse } from "next/server";
-import { db, agents, bonds, slashes, intents } from "@phronos/db";
+import { db, rawSql, agents, bonds, slashes, intents, policies } from "@phronos/db";
 import { eq, sql, and } from "drizzle-orm";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { parseAbi } from "viem";
+import { computeTier } from "@/lib/tiers";
 
 const SLASH_ORACLE_ABI = parseAbi([
   "function sharpeOf(uint256 erc8004Id) external view returns (int256 sharpe, uint64 updatedAt)",
@@ -31,10 +32,11 @@ export async function GET() {
     );
 
     const result = await Promise.all(allAgents.map(async (a) => {
-      const [bondRows, slashCount, intentCount] = await Promise.all([
+      const [bondRows, slashCount, intentCount, followerCount] = await Promise.all([
         store.select().from(bonds).where(eq(bonds.erc8004Id, a.erc8004Id)).limit(1),
         store.select({ count: sql<number>`count(*)` }).from(slashes).where(eq(slashes.erc8004Id, a.erc8004Id)),
         store.select({ count: sql<number>`count(*)` }).from(intents).where(eq(intents.erc8004Id, a.erc8004Id)),
+        store.select({ count: sql<number>`count(*)` }).from(policies).where(eq(policies.erc8004Id, a.erc8004Id)),
       ]);
 
       let sharpe7d        = 0;
@@ -62,6 +64,9 @@ export async function GET() {
         }).then(b => { bondLive = Number(b as bigint) / 1e6; }),
       ]);
 
+      const sc = Number(slashCount[0]?.count   ?? 0);
+      const ic = Number(intentCount[0]?.count  ?? 0);
+      const fc = Number(followerCount[0]?.count ?? 0);
       return {
         erc8004Id:       a.erc8004Id,
         agentCardCid:    a.agentCardCid,
@@ -69,11 +74,13 @@ export async function GET() {
         activeSince:     a.activeSince,
         bondUsdc:        bondRows[0]?.usdcEquiv ?? "0",
         bondLive,
-        slashCount:      Number(slashCount[0]?.count ?? 0),
-        intentCount:     Number(intentCount[0]?.count ?? 0),
+        slashCount:      sc,
+        intentCount:     ic,
+        followerCount:   fc,
         sharpe7d,
         sharpeUpdatedAt,
         feesUsdc,
+        tier:            computeTier({ intentCount: ic, sharpe7d, slashCount: sc, followerCount: fc }),
       };
     }));
 

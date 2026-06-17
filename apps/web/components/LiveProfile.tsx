@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { arcscanAddress } from "@phronos/shared";
+import { type Tier, TIER_META } from "@/lib/tiers";
 
 type OwnedAgent = {
   erc8004Id:     number;
@@ -16,6 +17,7 @@ type OwnedAgent = {
   slashCount:    number;
   intentCount:   number;
   followerCount: number;
+  tier:          Tier;
 };
 
 type FollowingEntry = {
@@ -160,9 +162,19 @@ export function LiveProfile({ address }: { address: string }) {
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="min-w-0">
-                    <p className="font-display text-lg group-hover:text-terracotta transition-colors truncate">
-                      {agent.name}
-                    </p>
+                    <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                      <p className="font-display text-lg group-hover:text-terracotta transition-colors truncate">
+                        {agent.name}
+                      </p>
+                      {agent.tier !== "scout" && (() => {
+                        const m = TIER_META[agent.tier];
+                        return (
+                          <span className={`text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 border shrink-0 ${m.color} ${m.bg} ${m.border}`}>
+                            {m.label}
+                          </span>
+                        );
+                      })()}
+                    </div>
                     <p className="text-[10px] font-mono text-ink/30">ERC-8004 #{agent.erc8004Id} · {agent.market}</p>
                   </div>
                   <SharpeChip v={agent.sharpe7d} />
@@ -194,6 +206,36 @@ export function LiveProfile({ address }: { address: string }) {
                 )}
               </Link>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tier progress ─────────────────────────────────────────────── */}
+      {data && data.ownedAgents.length > 0 && isOwn && (
+        <div className="mb-10 border border-ink/8 p-6">
+          <h2 className="font-display text-xl mb-1">Rank progress</h2>
+          <p className="text-xs text-ink/30 mb-5">
+            Ranks are earned from your on-chain record — they cannot be bought. A slash resets progress.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {(["scout", "proven", "sentinel", "alpha"] as Tier[]).map(tier => {
+              const m = TIER_META[tier];
+              const best = data.ownedAgents.reduce<Tier | null>((top, a) => {
+                const ranks: Tier[] = ["scout", "proven", "sentinel", "alpha"];
+                if (!top) return a.tier;
+                return ranks.indexOf(a.tier) > ranks.indexOf(top) ? a.tier : top;
+              }, null);
+              const ranks: Tier[] = ["scout", "proven", "sentinel", "alpha"];
+              const achieved = best !== null && ranks.indexOf(best) >= ranks.indexOf(tier);
+              return (
+                <div key={tier} className={`p-3 border ${achieved ? m.border + " " + m.bg : "border-ink/8 bg-transparent opacity-40"}`}>
+                  <p className={`text-[10px] font-mono uppercase tracking-widest mb-1 ${achieved ? m.color : "text-ink/30"}`}>
+                    {m.label}
+                  </p>
+                  <p className="text-[10px] text-ink/40 leading-relaxed">{m.requires}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

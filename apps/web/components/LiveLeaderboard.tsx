@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { arcscanAddress } from "@phronos/shared";
 import { agentName, agentDesc } from "@/lib/agents";
+import { type Tier, TIER_META } from "@/lib/tiers";
 
 type Agent = {
   erc8004Id:        number;
@@ -11,9 +12,11 @@ type Agent = {
   bondLive?:        number | null;
   slashCount:       number;
   intentCount:      number;
+  followerCount?:   number;
   sharpe7d:         number;
   sharpeUpdatedAt?: number | null;
   feesUsdc?:        number;
+  tier?:            Tier;
 };
 
 type Stats = {
@@ -155,8 +158,16 @@ export function LiveLeaderboard() {
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-mono text-ink/20 w-4 tabular-nums">{i + 1}</span>
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-ink group-hover/link:text-olive transition-colors">{meta.name}</p>
+                            {a.tier && a.tier !== "scout" && (() => {
+                              const m = TIER_META[a.tier];
+                              return (
+                                <span className={`text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 border ${m.color} ${m.bg} ${m.border}`}>
+                                  {m.label}
+                                </span>
+                              );
+                            })()}
                             {a.sharpe7d < 0 && (
                               <span className="text-[9px] font-mono uppercase tracking-wider text-terracotta bg-terracotta/10 px-1.5 py-0.5 rounded">
                                 at risk
