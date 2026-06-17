@@ -13,3 +13,10 @@ export function db() {
   const client = neon(process.env.DATABASE_URL);
   return drizzle(client, { schema });
 }
+
+/** Raw neon tagged-template client — bypasses drizzle for upserts that need
+ *  guaranteed HTTP semantics without ORM translation. */
+export function rawSql() {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL not set");
+  return neon(process.env.DATABASE_URL);
+}

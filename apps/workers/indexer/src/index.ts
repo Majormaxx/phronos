@@ -5,7 +5,7 @@
  */
 import { parseAbi } from "viem";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
-import { db, agents, intents, copies, refusals, slashes, followers, bonds, indexerCursor, eq, sql } from "@phronos/db";
+import { db, rawSql, agents, intents, copies, refusals, slashes, followers, bonds, indexerCursor, eq, sql } from "@phronos/db";
 
 const CHAIN_ID = 5042002;
 
@@ -285,18 +285,19 @@ async function start(): Promise<void> {
     },
   });
 
-  // Update cursor periodically
+  // Update cursor periodically — use raw neon() tagged template to avoid drizzle
+  // onConflictDoUpdate issues and neon-http connection pooling timeouts.
   setInterval(async () => {
     try {
       const block = await client.getBlockNumber();
-      await store.insert(indexerCursor).values({
-        chainId: CHAIN_ID,
-        lastBlock: Number(block),
-        updatedAt: new Date(),
-      }).onConflictDoUpdate({
-        target: indexerCursor.chainId,
-        set: { lastBlock: Number(block), updatedAt: new Date() },
-      });
+      const blockNum = Number(block);
+      const nsql = rawSql();
+      await nsql`
+        INSERT INTO indexer_cursor (chain_id, last_block, updated_at)
+        VALUES (${CHAIN_ID}, ${blockNum}, NOW())
+        ON CONFLICT (chain_id) DO UPDATE SET last_block = ${blockNum}, updated_at = NOW()
+      `;
+      console.log(`[indexer] cursor updated block=${blockNum}`);
     } catch (e) { console.error("[indexer] cursor update failed:", e); }
   }, 30_000);
 

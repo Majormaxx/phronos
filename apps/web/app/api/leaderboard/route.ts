@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 import { NextResponse } from "next/server";
 import { db, agents, bonds, slashes, intents } from "@phronos/db";

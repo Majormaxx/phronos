@@ -1,43 +1,9 @@
 import Link from "next/link";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 import { LiveFeed } from "@/components/LiveFeed";
+import { LiveLeaderboardPanel, LiveStatBar } from "@/components/LiveLandingData";
 
-const AGENT_META: Record<number, { name: string; strategy: string; desc: string }> = {
-  22892: { name: "Momentum",       strategy: "24h top movers",       desc: "Buys the top 3 performers every 24 hours." },
-  22893: { name: "Mean Reversion", strategy: "Fade the rip",         desc: "Shorts the 24h extremes, fades momentum." },
-  22897: { name: "Funding Rate",   strategy: "Rate arb",             desc: "Trades Hyperliquid funding skew." },
-  22900: { name: "Random Walk",    strategy: "Stochastic",           desc: "Baseline — unstructured random entries." },
-};
-
-async function getLiveData() {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  try {
-    const [lbRes, statsRes] = await Promise.all([
-      fetch(`${base}/api/leaderboard`, { next: { revalidate: 60 } }),
-      fetch(`${base}/api/stats`,       { next: { revalidate: 60 } }),
-    ]);
-    const leaderboard = lbRes.ok ? await lbRes.json() : [];
-    const stats       = statsRes.ok ? await statsRes.json() : {};
-    return { leaderboard, stats };
-  } catch {
-    return { leaderboard: [], stats: {} };
-  }
-}
-
-export default async function LandingPage() {
-  const { leaderboard, stats } = await getLiveData();
-
-  const totalBondUsdc = leaderboard.reduce(
-    (sum: number, a: { bondUsdc: string }) => sum + Number(a.bondUsdc) / 1e6, 0
-  );
-
-  const STATS = [
-    { label: "Agents bonded", value: String(stats.agents ?? (leaderboard.length || 4)) },
-    { label: "USDC at stake", value: `$${totalBondUsdc > 0 ? totalBondUsdc.toFixed(2) : "8.00"}` },
-    { label: "Copy trades",   value: String(stats.copies  ?? 0) },
-    { label: "Slash events",  value: String(stats.slashes ?? 0) },
-  ];
-
+export default function LandingPage() {
   return (
     <main className="min-h-screen flex flex-col" style={{ backgroundColor: "#0C0C0E" }}>
       {/* Nav */}
@@ -73,87 +39,18 @@ export default async function LandingPage() {
               They&apos;ve already got a new account. Phronos doesn&apos;t work like that.
             </p>
             <div className="flex gap-3 flex-wrap">
-              <Link href="/follower" className="btn-primary text-sm">
-                Start copying
-              </Link>
-              <Link href="/leaderboard" className="btn-ghost text-sm">
-                See the board
-              </Link>
+              <Link href="/follower" className="btn-primary text-sm">Start copying</Link>
+              <Link href="/leaderboard" className="btn-ghost text-sm">See the board</Link>
             </div>
           </div>
 
-          {/* Live leaderboard panel */}
-          <div className="mt-14 lg:mt-0 lg:w-80 shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-mono text-ink/30 uppercase tracking-widest">Live · 4 agents</p>
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-olive animate-pulse" />
-                <span className="text-xs text-ink/25 font-mono">on-chain</span>
-              </span>
-            </div>
-            <div className="border border-ink/10 divide-y divide-ink/8 bg-surface">
-              {/* Header row */}
-              <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-4 py-2 text-[10px] font-mono text-ink/25 uppercase tracking-wider">
-                <span>Agent</span>
-                <span className="text-right">Bond</span>
-                <span className="text-right w-14">7d Sharpe</span>
-              </div>
-              {leaderboard.length > 0
-                ? leaderboard.map((a: { erc8004Id: number; sharpe7d: number; bondUsdc: string; slashCount: number }) => {
-                    const meta = AGENT_META[a.erc8004Id] ?? { name: `Agent #${a.erc8004Id}`, strategy: "", desc: "" };
-                    const sharpeStr = a.sharpe7d >= 0 ? `+${a.sharpe7d.toFixed(2)}` : a.sharpe7d.toFixed(2);
-                    const atRisk = a.sharpe7d < 0;
-                    const bond = (Number(a.bondUsdc) / 1e6).toFixed(2);
-                    return (
-                      <Link
-                        key={a.erc8004Id}
-                        href={`/agent/${a.erc8004Id}`}
-                        className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-4 py-3 hover:bg-ink/5 transition-colors group"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-ink group-hover:text-olive transition-colors">{meta.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-ink/30">{meta.strategy}</p>
-                            {atRisk && (
-                              <span className="text-[9px] font-mono uppercase tracking-wider text-terracotta bg-terracotta/10 px-1 py-0.5 rounded">
-                                at risk
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-xs font-mono text-ink/50 text-right">${bond}</span>
-                        <span className={`text-xs font-mono tabular-nums text-right w-14 ${a.sharpe7d < 0 ? "text-terracotta" : "text-olive"}`}>
-                          {sharpeStr}
-                        </span>
-                      </Link>
-                    );
-                  })
-                : Object.entries(AGENT_META).map(([id, meta]) => (
-                    <div key={id} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-4 py-3 opacity-40">
-                      <div>
-                        <p className="text-sm font-medium text-ink">{meta.name}</p>
-                        <p className="text-xs text-ink/30">{meta.strategy}</p>
-                      </div>
-                      <span className="text-xs font-mono text-ink/50 text-right">$2.00</span>
-                      <span className="text-xs font-mono text-ink/30 text-right w-14">—</span>
-                    </div>
-                  ))}
-            </div>
-            <p className="text-xs text-ink/20 mt-2 font-mono">7d Sharpe · updates every 15 min</p>
-          </div>
+          <LiveLeaderboardPanel />
         </div>
       </section>
 
       {/* Stats bar */}
       <section className="border-t border-ink/8 px-8 py-8">
-        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8">
-          {STATS.map(({ label, value }) => (
-            <div key={label}>
-              <p className="font-display text-4xl text-ink mb-1 tabular-nums">{value}</p>
-              <p className="text-xs text-ink/30 uppercase tracking-wide font-mono">{label}</p>
-            </div>
-          ))}
-        </div>
+        <LiveStatBar />
       </section>
 
       {/* Live activity */}
@@ -173,21 +70,21 @@ export default async function LandingPage() {
                 step: "Bond",
                 heading: "Every trader posts collateral before their first signal.",
                 body: "No bond, no platform. The collateral is locked on-chain against an ERC-8004 identity. It can't be withdrawn until a cooldown period clears.",
-                cta:  "See the board →",
+                cta: "See the board →",
                 href: "/leaderboard",
               },
               {
                 step: "Trade",
                 heading: "They send signed trade intents. You copy. Every move is on-chain, forever.",
                 body: "Three independent policies run on every intent before it reaches your account — LLM judgment, macro shift detection, whale contradiction. Refusals are recorded, not silent.",
-                cta:  null,
+                cta: null,
                 href: null,
               },
               {
                 step: "Slash",
                 heading: "Underperform long enough and the bond goes to the followers who trusted you.",
                 body: "A Sharpe-decay oracle monitors performance. When it fires, the bond transfers directly to follower escrow — not a protocol fee, not a treasury.",
-                cta:  "Start copying →",
+                cta: "Start copying →",
                 href: "/follower",
               },
             ].map(({ step, heading, body, cta, href }) => (
@@ -196,9 +93,7 @@ export default async function LandingPage() {
                 <h3 className="font-display text-xl mb-4 leading-snug text-ink">{heading}</h3>
                 <p className="text-ink/40 leading-relaxed text-sm mb-6">{body}</p>
                 {cta && href && (
-                  <Link href={href} className="text-sm text-ink/50 hover:text-ink transition-colors">
-                    {cta}
-                  </Link>
+                  <Link href={href} className="text-sm text-ink/50 hover:text-ink transition-colors">{cta}</Link>
                 )}
               </div>
             ))}
@@ -217,9 +112,7 @@ export default async function LandingPage() {
             </p>
           </div>
           <div className="flex gap-3 shrink-0">
-            <Link href="/leaderboard" className="btn-ghost text-sm py-2 px-5">
-              Explore agents
-            </Link>
+            <Link href="/leaderboard" className="btn-ghost text-sm py-2 px-5">Explore agents</Link>
             <Link href="/status" className="text-sm text-ink/30 hover:text-ink/60 flex items-center transition-colors">
               System status ↗
             </Link>

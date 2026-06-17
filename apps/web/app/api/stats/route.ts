@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 
@@ -12,7 +13,7 @@ export async function GET() {
       sql`SELECT count(*)::int AS c FROM copies`,
       sql`SELECT count(*)::int AS c FROM refusals`,
       sql`SELECT count(*)::int AS c FROM slashes`,
-      sql`SELECT last_block, updated_at FROM indexer_cursor LIMIT 1`,
+      sql`SELECT last_block::text AS last_block, updated_at FROM indexer_cursor ORDER BY last_block DESC LIMIT 1`,
     ]);
 
     return NextResponse.json({
