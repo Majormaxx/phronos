@@ -4,9 +4,10 @@ import Link from "next/link";
 import { agentName, agentDesc } from "@/lib/agents";
 
 type Agent = {
-  erc8004Id: number;
-  bondUsdc:  string;
-  sharpe7d:  number;
+  erc8004Id:  number;
+  bondUsdc:   string;
+  bondLive:   number | null;
+  sharpe7d:   number;
   slashCount: number;
 };
 
@@ -61,7 +62,7 @@ export function LiveLeaderboardPanel() {
             ))
           : agents.map(a => {
               const sharpeStr = a.sharpe7d >= 0 ? `+${a.sharpe7d.toFixed(2)}` : a.sharpe7d.toFixed(2);
-              const bond = (Number(a.bondUsdc) / 1e6).toFixed(2);
+              const bond = (a.bondLive ?? Number(a.bondUsdc) / 1e6).toFixed(2);
               return (
                 <Link
                   key={a.erc8004Id}
@@ -115,7 +116,7 @@ export function LiveStatBar() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  const totalBond = agents.reduce((sum, a) => sum + Number(a.bondUsdc) / 1e6, 0);
+  const totalBond = agents.reduce((sum, a) => sum + (a.bondLive ?? Number(a.bondUsdc) / 1e6), 0);
 
   const rows = [
     { label: "Agents bonded", value: loaded ? String(stats.agents ?? agents.length) : "—" },

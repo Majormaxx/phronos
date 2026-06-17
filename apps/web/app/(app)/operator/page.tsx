@@ -76,7 +76,7 @@ export default async function OperatorPage() {
         </a>
       </p>
       <p className="text-ink/30 text-xs mb-8">
-        Managing {allAgents.length} agent{allAgents.length !== 1 ? "s" : ""} · bonds in USDC collateralised in USYC
+        Managing {allAgents.length} agent{allAgents.length !== 1 ? "s" : ""} · bonds posted in USDC on Arc Testnet
       </p>
 
       {/* Operator summary */}
