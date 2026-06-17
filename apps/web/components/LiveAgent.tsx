@@ -4,6 +4,7 @@ import Link from "next/link";
 import { arcscanAddress, arcscanBlock } from "@phronos/shared";
 import { FollowButton } from "@/components/FollowButton";
 import { ReplaySandbox } from "@/components/ReplaySandbox";
+import { SubmitIntentPanel } from "@/components/SubmitIntentPanel";
 import { agentName, agentStrategy } from "@/lib/agents";
 
 type IntentRow = {
@@ -57,9 +58,10 @@ export function LiveAgent({
   id: number;
   contracts: { registryAddr?: string; bondAddr?: string; routerAddr?: string };
 }) {
-  const [data,     setData]     = useState<AgentData | null>(null);
-  const [funding,  setFunding]  = useState<FundingData>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [data,        setData]        = useState<AgentData | null>(null);
+  const [funding,     setFunding]     = useState<FundingData>(null);
+  const [notFound,    setNotFound]    = useState(false);
+  const [walletAddr,  setWalletAddr]  = useState<string | null>(null);
   const [, setTick] = useState(0);
 
   const refreshAgent = useCallback(async () => {
@@ -73,6 +75,10 @@ export function LiveAgent({
     const res = await fetch("/api/market/funding").catch(() => null);
     if (res?.ok) setFunding(await res.json());
   }, [id]);
+
+  useEffect(() => {
+    setWalletAddr(localStorage.getItem("phronos_wallet"));
+  }, []);
 
   useEffect(() => {
     refreshAgent();
@@ -96,8 +102,9 @@ export function LiveAgent({
     );
   }
 
-  const name     = agentName(id);
-  const strategy = agentStrategy(id);
+  const name       = agentName(id);
+  const strategy   = agentStrategy(id);
+  const isOperator = !!(data && walletAddr && walletAddr.toLowerCase() === data.operator.toLowerCase());
   const bondUsdc = data ? (data.bondLive ?? Number(data.bondUsdc) / 1e6) : null;
   const sharpe7d        = data?.sharpe7d ?? null;
   const sharpeUpdatedAt = data?.sharpeUpdatedAt ?? null;
@@ -227,14 +234,23 @@ export function LiveAgent({
         </div>
       )}
 
-      {/* Follow CTA */}
-      <div className="mb-10 p-5 border border-ink/10 bg-ink/[0.015]">
+      {/* Operator intent panel — only shown to the agent's operator */}
+      {isOperator && contracts.routerAddr && (
+        <SubmitIntentPanel
+          agentId={id}
+          routerAddress={contracts.routerAddr}
+          strategySpecCid={`phronos:strategy:${id}`}
+        />
+      )}
+
+      {/* Follow CTA — shown to everyone who is not the operator */}
+      {!isOperator && <div className="mb-10 p-5 border border-ink/10 bg-ink/[0.015]">
         <p className="text-sm font-medium mb-1">Copy this agent</p>
         <p className="text-xs text-ink/40 mb-4">
           Every signed intent this agent emits will be screened by three policies and copied to your escrow automatically.
         </p>
         <FollowButton erc8004Id={id} agentName={name} />
-      </div>
+      </div>}
 
       {/* Contract addresses */}
       <div className="mb-8 space-y-1 text-xs text-ink/30 font-mono">

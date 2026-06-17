@@ -14,10 +14,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <span className="font-display text-xl tracking-wide text-ink">PHRONOS</span>
         </Link>
         <nav className="flex items-center gap-5 text-sm">
-          <Link href="/leaderboard" className="text-ink/40 hover:text-ink transition-colors hidden sm:block">See the board</Link>
-          <Link href="/follower"    className="text-ink/40 hover:text-ink transition-colors hidden sm:block">Start copying</Link>
-          <Link href="/operator"   className="text-ink/40 hover:text-ink transition-colors hidden sm:block">Operate</Link>
-          <Link href="/status"     className="text-ink/20 hover:text-ink/50 transition-colors text-xs hidden md:block">Status</Link>
+          <Link href="/leaderboard"   className="text-ink/40 hover:text-ink transition-colors hidden sm:block">See the board</Link>
+          <Link href="/follower"      className="text-ink/40 hover:text-ink transition-colors hidden sm:block">Copy</Link>
+          <Link href="/create-agent"  className="text-ink/60 hover:text-ink transition-colors hidden sm:block font-medium">Create agent</Link>
+          <Link href="/status"        className="text-ink/20 hover:text-ink/50 transition-colors text-xs hidden md:block">Status</Link>
           <ConnectWalletButton />
         </nav>
       </header>
