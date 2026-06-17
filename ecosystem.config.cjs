@@ -19,12 +19,13 @@ function app(name, workerPath) {
 
 module.exports = {
   apps: [
-    app("indexer",   "apps/workers/indexer"),
-    app("router",    "apps/workers/router"),
-    app("keeper",    "apps/workers/keeper"),
-    app("trader-01", "apps/workers/agents/trader-01"),
-    app("trader-02", "apps/workers/agents/trader-02"),
-    app("trader-03", "apps/workers/agents/trader-03"),
-    app("trader-04", "apps/workers/agents/trader-04"),
+    app("indexer",    "apps/workers/indexer"),
+    app("router",     "apps/workers/router"),
+    app("keeper",     "apps/workers/keeper"),
+    app("trader-01",  "apps/workers/agents/trader-01"),
+    app("trader-02",  "apps/workers/agents/trader-02"),
+    app("trader-03",  "apps/workers/agents/trader-03"),
+    app("trader-04",  "apps/workers/agents/trader-04"),
+    app("mcp-server", "apps/mcp-server"),
   ],
 };

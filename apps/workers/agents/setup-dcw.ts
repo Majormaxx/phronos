@@ -30,10 +30,10 @@ const CIRCLE_NETWORK  = process.env.CIRCLE_NETWORK ?? "testnet"; // "testnet" | 
 const IS_MAINNET      = CIRCLE_NETWORK === "mainnet";
 
 const AGENT_IDS: [number, 1 | 2 | 3 | 4][] = [
-  [Number(process.env.TRADER_01_AGENT_ID ?? "19297"), 1],
-  [Number(process.env.TRADER_02_AGENT_ID ?? "19298"), 2],
-  [Number(process.env.TRADER_03_AGENT_ID ?? "19299"), 3],
-  [Number(process.env.TRADER_04_AGENT_ID ?? "19300"), 4],
+  [Number(process.env.TRADER_01_AGENT_ID ?? "22892"), 1],
+  [Number(process.env.TRADER_02_AGENT_ID ?? "22893"), 2],
+  [Number(process.env.TRADER_03_AGENT_ID ?? "22897"), 3],
+  [Number(process.env.TRADER_04_AGENT_ID ?? "22900"), 4],
 ];
 
 const REGISTRY_ABI = parseAbi([

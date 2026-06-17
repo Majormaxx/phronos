@@ -1,9 +1,9 @@
 import { keccak256, toHex } from "viem";
 import type { IntentContext, RefuserResult } from "./llm_judgment.js";
 
-// Testnet threshold: 0.5σ — low enough to fire regularly on Arc Testnet demo.
+// Testnet threshold: 0.1σ — fires on any minor funding drift for demo visibility.
 // Production value would be 2.0σ.
-const SHIFT_SIGMA = 0.5;
+const SHIFT_SIGMA = 0.1;
 
 // Static fallback only used if Hyperliquid is completely unreachable
 const STATIC_BASELINE = 0.00008;
