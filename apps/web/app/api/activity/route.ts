@@ -1,7 +1,6 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { db, intents, copies, refusals } from "@phronos/db";
-import { desc } from "drizzle-orm";
-
+import { neon } from "@neondatabase/serverless";
 import { agentName } from "@/lib/agents";
 
 const REASON_NAMES: Record<number, string> = {
@@ -12,38 +11,39 @@ const REASON_NAMES: Record<number, string> = {
 
 export async function GET() {
   try {
+    const sql = neon(process.env.DATABASE_URL!);
     const [recentIntents, recentCopies, recentRefusals] = await Promise.all([
-      db().select().from(intents).orderBy(desc(intents.submittedAt)).limit(5),
-      db().select().from(copies).orderBy(desc(copies.executedAt)).limit(5),
-      db().select().from(refusals).orderBy(desc(refusals.refusedAt)).limit(5),
+      sql`SELECT intent_hash, erc8004_id, market_id, notional_usdc, submitted_at FROM intents ORDER BY submitted_at DESC LIMIT 5`,
+      sql`SELECT intent_hash, follower_addr, follower_notional, executed_at FROM copies ORDER BY executed_at DESC LIMIT 5`,
+      sql`SELECT intent_hash, follower_addr, reason, refused_at FROM refusals ORDER BY refused_at DESC LIMIT 5`,
     ]);
 
     const events = [
-      ...recentIntents.map(i => ({
+      ...recentIntents.map((i: Record<string, unknown>) => ({
         type:    "intent" as const,
-        time:    i.submittedAt,
-        label:   `${Number(i.notionalUsdc) >= 0 ? "LONG" : "SHORT"} ${i.marketId}`,
-        sub:     `$${(Math.abs(Number(i.notionalUsdc)) / 1e6).toFixed(2)} · ${agentName(i.erc8004Id)}`,
-        hash:    i.intentHash,
-        agentId: i.erc8004Id,
+        time:    i.submitted_at,
+        label:   `${Number(i.notional_usdc) >= 0 ? "LONG" : "SHORT"} ${i.market_id}`,
+        sub:     `$${(Math.abs(Number(i.notional_usdc)) / 1e6).toFixed(2)} · ${agentName(Number(i.erc8004_id))}`,
+        hash:    i.intent_hash,
+        agentId: Number(i.erc8004_id),
       })),
-      ...recentCopies.map(c => ({
+      ...recentCopies.map((c: Record<string, unknown>) => ({
         type:    "copy" as const,
-        time:    c.executedAt,
+        time:    c.executed_at,
         label:   "Copy executed",
-        sub:     `$${(Math.abs(Number(c.followerNotional)) / 1e6).toFixed(2)} · ${c.followerAddr.slice(0, 10)}…`,
-        hash:    c.intentHash,
+        sub:     `$${(Math.abs(Number(c.follower_notional)) / 1e6).toFixed(2)} · ${String(c.follower_addr).slice(0, 10)}…`,
+        hash:    c.intent_hash,
         agentId: null,
       })),
-      ...recentRefusals.map(r => ({
+      ...recentRefusals.map((r: Record<string, unknown>) => ({
         type:    "refusal" as const,
-        time:    r.refusedAt,
+        time:    r.refused_at,
         label:   "Copy refused",
-        sub:     REASON_NAMES[r.reason] ?? `Code ${r.reason}`,
-        hash:    r.intentHash,
+        sub:     REASON_NAMES[Number(r.reason)] ?? `Code ${r.reason}`,
+        hash:    r.intent_hash,
         agentId: null,
       })),
-    ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
+    ].sort((a, b) => new Date(String(b.time)).getTime() - new Date(String(a.time)).getTime()).slice(0, 10);
 
     return NextResponse.json(events);
   } catch (err) {

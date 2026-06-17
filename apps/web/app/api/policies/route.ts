@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { db, policies, followers } from "@phronos/db";
 import { eq } from "drizzle-orm";

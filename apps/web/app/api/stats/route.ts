@@ -1,31 +1,29 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import { db, agents, followers, intents, copies, refusals, slashes, indexerCursor } from "@phronos/db";
-import { sql } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
 
 export async function GET() {
   try {
-    const store = db();
-    const [
-      agentCount, followerCount, intentCount, copyCount, refusalCount, slashCount, cursor,
-    ] = await Promise.all([
-      store.select({ c: sql<number>`count(*)` }).from(agents),
-      store.select({ c: sql<number>`count(*)` }).from(followers),
-      store.select({ c: sql<number>`count(*)` }).from(intents),
-      store.select({ c: sql<number>`count(*)` }).from(copies),
-      store.select({ c: sql<number>`count(*)` }).from(refusals),
-      store.select({ c: sql<number>`count(*)` }).from(slashes),
-      store.select().from(indexerCursor).limit(1),
+    const sql = neon(process.env.DATABASE_URL!);
+    const [agents, followers, intents, copies, refusals, slashes, cursor] = await Promise.all([
+      sql`SELECT count(*)::int AS c FROM agents WHERE erc8004_id > 20000 AND suspended = false`,
+      sql`SELECT count(*)::int AS c FROM followers`,
+      sql`SELECT count(*)::int AS c FROM intents`,
+      sql`SELECT count(*)::int AS c FROM copies`,
+      sql`SELECT count(*)::int AS c FROM refusals`,
+      sql`SELECT count(*)::int AS c FROM slashes`,
+      sql`SELECT last_block, updated_at FROM indexer_cursor LIMIT 1`,
     ]);
 
     return NextResponse.json({
-      agents:    Number(agentCount[0]?.c ?? 0),
-      followers: Number(followerCount[0]?.c ?? 0),
-      intents:   Number(intentCount[0]?.c ?? 0),
-      copies:    Number(copyCount[0]?.c ?? 0),
-      refusals:  Number(refusalCount[0]?.c ?? 0),
-      slashes:   Number(slashCount[0]?.c ?? 0),
-      indexerBlock: cursor[0]?.lastBlock ?? 0,
-      indexerUpdatedAt: cursor[0]?.updatedAt ?? null,
+      agents:           Number(agents[0]?.c ?? 0),
+      followers:        Number(followers[0]?.c ?? 0),
+      intents:          Number(intents[0]?.c ?? 0),
+      copies:           Number(copies[0]?.c ?? 0),
+      refusals:         Number(refusals[0]?.c ?? 0),
+      slashes:          Number(slashes[0]?.c ?? 0),
+      indexerBlock:     cursor[0]?.last_block ?? 0,
+      indexerUpdatedAt: cursor[0]?.updated_at ?? null,
     });
   } catch (err) {
     console.error("/api/stats", err);
