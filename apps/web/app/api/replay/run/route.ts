@@ -1,3 +1,6 @@
+export const dynamic    = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 import { NextResponse } from "next/server";
 import { keccak256, toHex, encodeAbiParameters, parseAbiParameters } from "viem";
 
@@ -16,7 +19,7 @@ interface MarketSnapshot {
 async function fetchSnapshot(): Promise<MarketSnapshot> {
   const res = await fetch(
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true",
-    { next: { revalidate: 60 }, signal: AbortSignal.timeout(5000) }
+    { cache: "no-store", signal: AbortSignal.timeout(5000) }
   );
   if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
   const data = await res.json() as {

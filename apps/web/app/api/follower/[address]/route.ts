@@ -1,3 +1,6 @@
+export const dynamic    = "force-dynamic";
+export const fetchCache = "force-no-store";
+
 import { NextResponse } from "next/server";
 import { db, copies, refusals } from "@phronos/db";
 import { eq, desc } from "drizzle-orm";

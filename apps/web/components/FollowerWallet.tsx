@@ -6,7 +6,8 @@ import { createPublicClient, createWalletClient, custom, http, encodeFunctionDat
 import { addresses, arcTestnet, CCTP_ARC_DOMAIN } from "@phronos/shared";
 import { useWallet } from "@/lib/wallet-context";
 
-const ROUTER = (process.env.NEXT_PUBLIC_PHRONOS_ROUTER_ADDR ?? "0x7988558ed4B654cFc3D89C352b41053ac1d14e3F") as `0x${string}`;
+// Router address must come from env — no hardcoded fallback
+const ROUTER = (process.env.NEXT_PUBLIC_PHRONOS_ROUTER_ADDR ?? "") as `0x${string}`;
 const USDC   = addresses.USDC;
 
 
@@ -176,13 +177,10 @@ export function FollowerWallet() {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         setCctpStatus("minting");
 
-        const eth = (window as any).ethereum;
-        if (!eth) { setCctpStatus("idle"); return; }
-
-        const arcWc = createWalletClient({ chain: arcTestnet, transport: custom(eth) });
-        await arcWc.switchChain({ id: arcTestnet.id }).catch(async (err: any) => {
-          if (err.code === 4902) await arcWc.addChain({ chain: arcTestnet });
-        });
+        // Use wallet context (supports both Circle SCA and MetaMask for Arc txs)
+        let arcWc: any;
+        try { arcWc = await getWalletClient(); }
+        catch { setCctpStatus("idle"); return; }
 
         const mintTx = await arcWc.writeContract({
           address:      addresses.CCTP_TRANSMITTER_V2,
@@ -296,9 +294,10 @@ export function FollowerWallet() {
     const mintRecipient = `0x${recipient.slice(2).padStart(64, "0")}` as `0x${string}`;
 
     try {
-      // We need the user's Sepolia wallet — switch MetaMask to Sepolia
+      // Sepolia bridge requires window.ethereum — Circle SCA is Arc-only.
+      // This is intentional: CCTP burn happens on Sepolia, not Arc.
       const eth = (window as any).ethereum;
-      if (!eth) throw new Error("MetaMask required for cross-chain bridge");
+      if (!eth) throw new Error("MetaMask (or browser wallet) required for the Sepolia bridge — Circle passkey wallets are Arc-only");
 
       const sepoliaWc = createWalletClient({ transport: custom(eth) });
       await sepoliaWc.switchChain({ id: 11155111 }).catch(async (err: any) => {

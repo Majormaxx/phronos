@@ -2,10 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { createPublicClient, http, parseAbi } from "viem";
-import { arcTestnet } from "@phronos/shared";
+import { arcTestnet, getDeployedAddresses } from "@phronos/shared";
 import { useWallet } from "@/lib/wallet-context";
-
-const ROUTER = (process.env.NEXT_PUBLIC_PHRONOS_ROUTER_ADDR ?? "0x7988558ed4B654cFc3D89C352b41053ac1d14e3F") as `0x${string}`;
 
 const ROUTER_ABI = parseAbi([
   "function activateCopy(uint256 erc8004Id) external",
@@ -38,17 +36,18 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
       alert("Connect your wallet first — use the button in the top-right nav.");
       return;
     }
+    const { router: ROUTER } = getDeployedAddresses();
+    if (!ROUTER) { setError("Router address not configured"); setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
       if (walletType === "circle-sca") {
-        // Gasless via sendUserOperation
         const sca = await getSCAClient();
         if (!sca) throw new Error("SCA client unavailable");
         const { encodeFunctionData } = await import("viem");
         await (sca as any).sendUserOperation({
           calls: [{
-            to:   ROUTER,
+            to:   ROUTER as `0x${string}`,
             data: encodeFunctionData({ abi: ROUTER_ABI, functionName: "activateCopy", args: [BigInt(erc8004Id)] }),
           }],
           paymaster: true,
@@ -58,7 +57,7 @@ export function FollowButton({ erc8004Id, agentName }: Props) {
         const wc         = await getWalletClient();
         const pubClient  = createPublicClient({ chain: arcTestnet, transport: http() });
         const { request } = await pubClient.simulateContract({
-          address:      ROUTER,
+          address:      ROUTER as `0x${string}`,
           abi:          ROUTER_ABI,
           functionName: "activateCopy",
           args:         [BigInt(erc8004Id)],
