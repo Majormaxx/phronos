@@ -91,6 +91,17 @@ export const traces = pgTable("traces", {
   pinnedAt:    timestamp("pinned_at", { withTimezone: true }).notNull(),
 });
 
+// Stores human-readable metadata for user-created agents.
+// Not derived from chain — written by the frontend after on-chain registration.
+export const agentMetadata = pgTable("agent_metadata", {
+  erc8004Id:    bigint("erc8004_id", { mode: "number" }).primaryKey(),
+  name:         text("name").notNull(),
+  description:  text("description").notNull().default(""),
+  strategyType: text("strategy_type").notNull().default("Custom"),
+  market:       text("market").notNull().default("BTC"),
+  createdBy:    text("created_by").notNull(),
+});
+
 export const indexerCursor = pgTable("indexer_cursor", {
   chainId:   bigint("chain_id", { mode: "number" }).primaryKey(),
   lastBlock:  bigint("last_block", { mode: "number" }).notNull(),

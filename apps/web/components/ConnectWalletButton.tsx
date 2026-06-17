@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 
 export function ConnectWalletButton() {
   const [address, setAddress] = useState<string | null>(null);
@@ -57,13 +58,21 @@ export function ConnectWalletButton() {
 
   if (address) {
     return (
-      <button
-        onClick={disconnect}
-        className="text-xs font-mono text-ink/50 hover:text-terracotta transition-colors border border-ink/10 px-3 py-1.5 rounded"
-        title="Click to disconnect"
-      >
-        {address.slice(0, 6)}…{address.slice(-4)}
-      </button>
+      <div className="flex items-center gap-1.5">
+        <Link
+          href={`/profile/${address}`}
+          className="text-xs font-mono text-ink/50 hover:text-ink transition-colors border border-ink/10 px-3 py-1.5"
+        >
+          {address.slice(0, 6)}…{address.slice(-4)}
+        </Link>
+        <button
+          onClick={disconnect}
+          className="text-ink/20 hover:text-terracotta transition-colors text-xs px-1.5 py-1.5 border border-ink/8"
+          title="Disconnect"
+        >
+          ×
+        </button>
+      </div>
     );
   }
 

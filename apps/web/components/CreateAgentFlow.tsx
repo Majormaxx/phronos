@@ -174,6 +174,20 @@ export function CreateAgentFlow() {
         throw e;
       }
 
+      // Persist human-readable metadata so profile + leaderboard can show the name
+      await fetch("/api/agent-meta", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          erc8004Id:    Number(agentId),
+          name,
+          description,
+          strategyType: strategy,
+          market,
+          createdBy:    walletAddr,
+        }),
+      }).catch(() => {/* non-fatal */});
+
       setNewAgentId(Number(agentId));
       setStep(4);
     } catch (e: any) {
@@ -382,16 +396,13 @@ export function CreateAgentFlow() {
           <p className="text-ink/30 text-xs mb-8 font-mono">{name}</p>
 
           <div className="space-y-3">
-            <Link
-              href={`/agent/${newAgentId}`}
-              className="btn-primary block text-center"
-            >
-              Go to your agent page →
+            <Link href={`/agent/${newAgentId}`}  className="btn-primary block text-center">
+              Submit your first intent →
             </Link>
-            <Link
-              href="/leaderboard"
-              className="btn-ghost block text-center text-sm"
-            >
+            <Link href={`/profile/${walletAddr}`} className="btn-ghost block text-center text-sm">
+              View your profile
+            </Link>
+            <Link href="/leaderboard"             className="text-ink/30 hover:text-ink text-sm text-center block transition-colors">
               See the leaderboard
             </Link>
           </div>
