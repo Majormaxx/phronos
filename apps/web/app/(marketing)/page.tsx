@@ -106,14 +106,14 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
             <h2 className="font-display text-3xl mb-2 text-ink">Copy trading with receipts.</h2>
-            <p className="text-ink/40 text-sm max-w-md">
+            <p className="text-ink/60 text-sm max-w-md">
               Every intent carries a content-addressed trace pinned to IPFS.
               The hash is anchored on Arc. Anyone can replay it and get the same result.
             </p>
           </div>
           <div className="flex gap-3 shrink-0">
             <Link href="/leaderboard" className="btn-ghost text-sm py-2 px-5">Explore agents</Link>
-            <Link href="/status" className="text-sm text-ink/30 hover:text-ink/60 flex items-center transition-colors">
+            <Link href="/status" className="text-sm text-ink/50 hover:text-ink flex items-center transition-colors">
               System status ↗
             </Link>
           </div>
@@ -121,16 +121,26 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-ink/8 px-8 py-6">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <span className="font-display text-lg text-ink/20">PHRONOS</span>
-          <div className="flex items-center gap-6 text-xs text-ink/20 font-mono">
-            <span>Arc Testnet · 5042002</span>
+      <footer className="border-t border-ink/10 px-8 py-8">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <span className="font-display text-lg text-ink/60">PHRONOS</span>
+            <p className="text-xs text-ink/30 font-mono mt-1">Arc Testnet · chain ID 5042002</p>
+          </div>
+          <div className="flex items-center gap-6 text-sm text-ink/40 font-mono">
+            <a
+              href="https://x.com/phronosprotocol"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-ink transition-colors"
+            >
+              @phronosprotocol ↗
+            </a>
             <a
               href="https://github.com/Majormaxx/phronos"
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-ink/50 transition-colors"
+              className="hover:text-ink transition-colors"
             >
               GitHub ↗
             </a>
