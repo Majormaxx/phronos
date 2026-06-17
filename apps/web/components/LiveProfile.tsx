@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { arcscanAddress } from "@phronos/shared";
 import { type Tier, TIER_META } from "@/lib/tiers";
+import { SharePanel } from "@/components/SharePanel";
 
 type OwnedAgent = {
   erc8004Id:     number;
@@ -119,11 +120,23 @@ export function LiveProfile({ address }: { address: string }) {
             {address} ↗
           </a>
         </div>
-        {isOwn && (
-          <Link href="/create-agent" className="btn-primary text-sm shrink-0">
-            + Create agent
-          </Link>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {data && (() => {
+            const bestAgent  = data.ownedAgents[0];
+            const topCall    = data.bestCalls[0];
+            const sharpeStr  = bestAgent ? `${bestAgent.sharpe7d >= 0 ? "+" : ""}${bestAgent.sharpe7d.toFixed(2)} Sharpe` : "";
+            const callStr    = topCall   ? `, best call ${topCall.pctReturn >= 0 ? "+" : ""}${topCall.pctReturn.toFixed(2)}% on ${topCall.marketId}` : "";
+            const profileText = data.ownedAgents.length > 0
+              ? `My verified trading record on @phronosprotocol — ${sharpeStr}${callStr}. Every call anchored on-chain.`
+              : `My trading profile on @phronosprotocol — ${address.slice(0, 8)}`;
+            return <SharePanel text={profileText} label="Share profile" />;
+          })()}
+          {isOwn && (
+            <Link href="/create-agent" className="btn-primary text-sm shrink-0">
+              + Create agent
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* ── Stats bar ──────────────────────────────────────────────────── */}

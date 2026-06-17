@@ -6,7 +6,7 @@ import { arcscanAddress, arcscanBlock, resolveUrl, getPublicClient, getDeployedA
 import { notFound } from "next/navigation";
 import { parseAbi } from "viem";
 import { agentName } from "@/lib/agents";
-import { ShareButton } from "@/components/ShareButton";
+import { SharePanel } from "@/components/SharePanel";
 import { computeTier, TIER_META } from "@/lib/tiers";
 import type { Metadata } from "next";
 
@@ -122,6 +122,11 @@ export default async function TracePage({ params }: { params: { hash: string } }
   const pnlGain = pct !== null && pct >= 0;
   const totalFollowerPnl = copyRows.reduce((s, c) => s + (c.pnlUsdc ? Number(c.pnlUsdc) : 0), 0);
 
+  const tierLabel = tier !== "scout" ? ` [${TIER_META[tier].label}]` : "";
+  const shareText = pct !== null
+    ? `${agentDisplayName}${tierLabel}: ${isLong ? "LONG" : "SHORT"} ${intent.marketId} ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%\n\nEntry $${entry?.toLocaleString()} → Close $${close?.toLocaleString()}\nVerified on-chain, fully reproducible.\n\n@phronosprotocol`
+    : `${agentDisplayName}${tierLabel} just submitted a ${isLong ? "LONG" : "SHORT"} ${intent.marketId} signal on @phronosprotocol\n\nEvery call is anchored on-chain with a full replay trace.`;
+
   // Fetch IPFS trace content if available
   interface TraceContent {
     result?: { rationale?: string };
@@ -138,11 +143,11 @@ export default async function TracePage({ params }: { params: { hash: string } }
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <Link href={`/agent/${intent.erc8004Id}`} className="text-sm text-ink/40 hover:text-ink/70">
           ← {agentDisplayName}
         </Link>
-        <ShareButton label="Share this call" />
+        <SharePanel text={shareText} label="Share call" />
       </div>
 
       {/* ── Call header ──────────────────────────────────────────────── */}

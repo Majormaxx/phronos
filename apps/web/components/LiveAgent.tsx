@@ -5,6 +5,7 @@ import { arcscanAddress, arcscanBlock } from "@phronos/shared";
 import { FollowButton } from "@/components/FollowButton";
 import { ReplaySandbox } from "@/components/ReplaySandbox";
 import { SubmitIntentPanel } from "@/components/SubmitIntentPanel";
+import { SharePanel } from "@/components/SharePanel";
 import { agentName, agentStrategy } from "@/lib/agents";
 
 type IntentRow = {
@@ -355,9 +356,9 @@ export function LiveAgent({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-3 shrink-0 ml-3">
+                <div className="flex items-center gap-2.5 shrink-0 ml-3">
                   {pnlEl}
-                  <span className="text-xs text-ink/25 font-mono hidden sm:inline">
+                  <span className="text-xs text-ink/25 font-mono hidden md:inline">
                     {new Date(i.submittedAt).toLocaleTimeString()}
                   </span>
                   <Link
@@ -366,6 +367,19 @@ export function LiveAgent({
                   >
                     trace ↗
                   </Link>
+                  {/* Only show share icons when there's a closed P&L worth sharing */}
+                  {i.entryPricePx && i.closePricePx && (() => {
+                    const pctVal = (i.closePricePx - i.entryPricePx) / i.entryPricePx * 100 * (Number(i.notionalUsdc) >= 0 ? 1 : -1);
+                    const agentN = name;
+                    const text   = `${agentN}: ${Number(i.notionalUsdc) >= 0 ? "LONG" : "SHORT"} ${i.marketId} ${pctVal >= 0 ? "+" : ""}${pctVal.toFixed(2)}%\n\nEntry $${i.entryPricePx.toLocaleString(undefined, {maximumFractionDigits:0})} → Close $${i.closePricePx.toLocaleString(undefined, {maximumFractionDigits:0})}\nVerified on-chain @phronosprotocol`;
+                    return (
+                      <SharePanel
+                        url={`${typeof window !== "undefined" ? window.location.origin : "https://phronos.xyz"}/traces/${i.intentHash}`}
+                        text={text}
+                        compact
+                      />
+                    );
+                  })()}
                 </div>
               </div>
               {entry && (
