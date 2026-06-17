@@ -297,7 +297,7 @@ async function start(): Promise<void> {
         target: indexerCursor.chainId,
         set: { lastBlock: Number(block), updatedAt: new Date() },
       });
-    } catch { /* non-fatal */ }
+    } catch (e) { console.error("[indexer] cursor update failed:", e); }
   }, 30_000);
 
   console.log("[indexer] running — watching for events");
