@@ -9,8 +9,7 @@
 import { parseAbi, keccak256, toHex, createWalletClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getPublicClient, getWalletClient, getDeployedAddresses, arcTestnet } from "@phronos/shared";
-import { db, followers, intents, copies, refusals } from "@phronos/db";
-import { eq } from "drizzle-orm";
+import { db, followers, intents, copies, refusals, eq } from "@phronos/db";
 import { llmJudgment } from "../../refusers/src/llm_judgment.js";
 import { macroShift } from "../../refusers/src/macro_shift.js";
 import { whaleContradiction } from "../../refusers/src/whale_contradiction.js";

@@ -5,10 +5,10 @@ function app(name, workerPath) {
   const cwd = `${ROOT}/${workerPath}`;
   return {
     name,
-    script:          `${cwd}/node_modules/.bin/tsx`,
-    args:            "src/index.ts",
+    script:           "src/index.ts",
+    interpreter:      "node",
+    interpreter_args: `--env-file=${ENV} --import tsx`,
     cwd,
-    env_file:        ENV,
     autorestart:     true,
     restart_delay:   5000,
     max_restarts:    20,

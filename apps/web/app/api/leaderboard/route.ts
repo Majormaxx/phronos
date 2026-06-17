@@ -1,6 +1,8 @@
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { db, agents, bonds, slashes, intents } from "@phronos/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { parseAbi } from "viem";
 
@@ -22,7 +24,10 @@ export async function GET() {
     const { slashOracle, router, bond: bondContract } = getDeployedAddresses();
     const client = getPublicClient();
 
-    const allAgents = await store.select().from(agents).where(eq(agents.suspended, false));
+    // Exclude v1 deployment IDs (19297-19300) — superseded by v2 (22892-22900)
+    const allAgents = await store.select().from(agents).where(
+      and(eq(agents.suspended, false), sql`${agents.erc8004Id} > 20000`),
+    );
 
     const result = await Promise.all(allAgents.map(async (a) => {
       const [bondRows, slashCount, intentCount] = await Promise.all([
