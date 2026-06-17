@@ -61,89 +61,78 @@ function nearestPrice(history: PricePoint[], ts: number): number {
 // ── Phase 1: close expired HL positions and record P&L ─────────────────────
 
 async function closeExpiredPositions(): Promise<void> {
-  if (HYPERLIQUID_MODE !== "live" || !ROUTER_PK) return;
-
-  const routerAddress = privateKeyToAccount(ROUTER_PK).address;
   const nsql = rawSql();
 
-  // Intents with an open HL position that are now past validUntil
+  // Any intent with an entry price but no close price that has expired —
+  // covers both live HL fills and mock-mode price-tracked intents.
   const expired = await nsql`
     SELECT i.intent_hash, i.market_id, i.notional_usdc, i.fill_sz_base,
            i.entry_price_px, i.hl_order_id, i.valid_until
     FROM intents i
-    WHERE i.hl_order_id   IS NOT NULL
-      AND i.fill_sz_base  IS NOT NULL
-      AND i.close_price_px IS NULL
-      AND i.valid_until    < NOW()
+    WHERE i.entry_price_px IS NOT NULL
+      AND i.close_price_px  IS NULL
+      AND i.valid_until      < NOW()
     ORDER BY i.valid_until ASC
     LIMIT 50
   ` as Array<{
     intent_hash:    string;
     market_id:      string;
     notional_usdc:  string;
-    fill_sz_base:   string;
+    fill_sz_base:   string | null;
     entry_price_px: string;
-    hl_order_id:    string;
+    hl_order_id:    string | null;
     valid_until:    Date;
   }>;
 
   if (!expired.length) return;
-  console.log(`[keeper] closing ${expired.length} expired HL position(s)`);
+  console.log(`[keeper] settling ${expired.length} expired position(s) (mode=${HYPERLIQUID_MODE})`);
 
   for (const row of expired) {
-    const market   = row.market_id;
+    const market    = row.market_id;
     const openIsBuy = BigInt(row.notional_usdc) >= 0n;
-    const openSz   = parseFloat(row.fill_sz_base);
-    const entryPx  = parseFloat(row.entry_price_px);
+    const entryPx   = parseFloat(row.entry_price_px);
 
     try {
       let closePx: number;
 
-      // Attempt to close the actual position
-      const closeFill = await hlClosePosition({
-        pk:        ROUTER_PK,
-        address:   routerAddress,
-        market,
-        openIsBuy,
-        openSz,
-      });
-
-      if (closeFill) {
-        closePx = closeFill.avgPx;
-        console.log(`[keeper] closed HL position intentHash=${row.intent_hash.slice(0,10)} closePx=${closePx}`);
+      // Live mode with a real HL position: attempt to close it on-chain
+      if (HYPERLIQUID_MODE === "live" && ROUTER_PK && row.hl_order_id && row.fill_sz_base) {
+        const routerAddr = privateKeyToAccount(ROUTER_PK).address;
+        const closeFill  = await hlClosePosition({
+          pk:        ROUTER_PK,
+          address:   routerAddr,
+          market,
+          openIsBuy,
+          openSz:    parseFloat(row.fill_sz_base),
+        });
+        closePx = closeFill?.avgPx ?? await hlMidPrice(market);
+        console.log(`[keeper] HL close intent=${row.intent_hash.slice(0,10)} closePx=${closePx}`);
       } else {
-        // Position already closed externally — use current mid as close price
+        // Mock mode (or live without a fill): use current HL mid as close price.
+        // This gives real P&L from real price movement without exchange fills.
         closePx = await hlMidPrice(market);
-        console.log(`[keeper] position already closed for intent=${row.intent_hash.slice(0,10)}, using mid=${closePx}`);
+        console.log(`[keeper] mock settle intent=${row.intent_hash.slice(0,10)} entry=${entryPx} close=${closePx}`);
       }
 
-      // Persist close price on intent
-      await nsql`
-        UPDATE intents SET close_price_px = ${closePx.toString()} WHERE intent_hash = ${row.intent_hash}
-      `;
+      await nsql`UPDATE intents SET close_price_px = ${closePx.toString()} WHERE intent_hash = ${row.intent_hash}`;
 
-      // Compute P&L for each copy of this intent
-      // pnl = direction * (closePx - entryPx) / entryPx * followerNotionalUsd
+      // Compute and persist P&L for every copy of this intent
       const copiesOfIntent = await nsql`
-        SELECT follower_addr, follower_notional FROM copies
-        WHERE intent_hash = ${row.intent_hash}
+        SELECT follower_addr, follower_notional FROM copies WHERE intent_hash = ${row.intent_hash}
       ` as Array<{ follower_addr: string; follower_notional: string }>;
 
       for (const copy of copiesOfIntent) {
-        const followerNotionalUsd = Number(copy.follower_notional) / 1_000_000;
-        const pricePct            = (closePx - entryPx) / entryPx;
-        const direction           = openIsBuy ? 1 : -1;
-        const pnlUsdc             = direction * pricePct * followerNotionalUsd;
-
+        const notionalUsd = Number(copy.follower_notional) / 1_000_000;
+        const direction   = openIsBuy ? 1 : -1;
+        const pnlUsdc     = direction * (closePx - entryPx) / entryPx * notionalUsd;
         await nsql`
           UPDATE copies SET pnl_usdc = ${pnlUsdc.toFixed(10)}
           WHERE intent_hash = ${row.intent_hash} AND follower_addr = ${copy.follower_addr}
         `;
       }
-
-      console.log(`[keeper] recorded P&L for ${copiesOfIntent.length} copies of ${row.intent_hash.slice(0,10)}`);
+      console.log(`[keeper] P&L settled for ${copiesOfIntent.length} copies of ${row.intent_hash.slice(0,10)}`);
     } catch (e) {
-      console.error(`[keeper] failed to close intent=${row.intent_hash.slice(0,10)}:`, (e as Error).message?.slice(0,200));
+      console.error(`[keeper] settle failed intent=${row.intent_hash.slice(0,10)}:`, (e as Error).message?.slice(0,200));
     }
   }
 }
