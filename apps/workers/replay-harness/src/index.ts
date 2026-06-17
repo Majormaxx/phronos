@@ -194,12 +194,12 @@ export async function replay(input: ReplayInput): Promise<ReplayOutput> {
   return output;
 }
 
-// CLI entrypoint: node src/index.ts --agent 19297 --snapshot 0xdeadbeef...01 --seed 42
+// CLI entrypoint: node src/index.ts --agent 22892 --snapshot 0xdeadbeef...01 --seed 42
 if (process.argv[1]?.endsWith("index.ts") || process.argv[1]?.endsWith("index.js")) {
   const args = process.argv.slice(2);
-  const get  = (flag: string) => args[args.indexOf(flag) + 1];
+  const get  = (flag: string) => { const i = args.indexOf(flag); return i !== -1 ? args[i + 1] : undefined; };
 
-  const agentId            = parseInt(get("--agent") ?? "19297");
+  const agentId            = parseInt(get("--agent") ?? "22892");
   const strategySpecCID    = get("--strategy") ?? "phronos:strategy:momentum-24h-top3";
   const marketSnapshotHash = (get("--snapshot") ?? "0xdeadbeef00000000000000000000000000000000000000000000000000000001") as `0x${string}`;
   const seed               = parseInt(get("--seed") ?? "42");
