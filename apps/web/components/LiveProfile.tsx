@@ -29,10 +29,23 @@ type FollowingEntry = {
   lastCopyAt:   string | null;
 };
 
+type BestCall = {
+  intentHash:   string;
+  erc8004Id:    number;
+  agentName:    string;
+  marketId:     string;
+  isLong:       boolean;
+  entryPricePx: number;
+  closePricePx: number;
+  pctReturn:    number;
+  submittedAt:  string;
+};
+
 type ProfileData = {
   address:     string;
   ownedAgents: OwnedAgent[];
   following:   FollowingEntry[];
+  bestCalls:   BestCall[];
   stats: {
     totalBondLive:   number;
     totalFollowers:  number;
@@ -210,12 +223,59 @@ export function LiveProfile({ address }: { address: string }) {
         </div>
       )}
 
+      {/* ── Best verified calls ───────────────────────────────────────── */}
+      {data && data.bestCalls.length > 0 && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-2xl">Best calls</h2>
+            <span className="text-xs text-ink/25 font-mono">verified on-chain · sorted by return</span>
+          </div>
+          <div className="border border-ink/10 divide-y divide-ink/5">
+            <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 px-4 py-2 text-[10px] font-mono text-ink/25 uppercase tracking-wider">
+              <span>Dir</span>
+              <span>Market · Agent</span>
+              <span className="text-right">Entry</span>
+              <span className="text-right">Return</span>
+              <span className="text-right">Proof</span>
+            </div>
+            {data.bestCalls.map(c => (
+              <div key={c.intentHash} className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-4 items-center px-4 py-3 hover:bg-ink/5 transition-colors">
+                <span className={`text-[9px] font-mono px-1.5 py-0.5 ${c.isLong ? "bg-olive/15 text-olive" : "bg-terracotta/15 text-terracotta"}`}>
+                  {c.isLong ? "L" : "S"}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm text-ink truncate">{c.marketId}</p>
+                  <p className="text-[10px] text-ink/25 font-mono">{c.agentName}</p>
+                </div>
+                <span className="text-xs font-mono text-ink/40 text-right">
+                  ${c.entryPricePx.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+                <span className={`text-sm font-mono tabular-nums text-right ${c.pctReturn >= 0 ? "text-olive" : "text-terracotta"}`}>
+                  {c.pctReturn >= 0 ? "+" : ""}{c.pctReturn.toFixed(2)}%
+                </span>
+                <Link
+                  href={`/traces/${c.intentHash}`}
+                  className="text-[10px] font-mono text-ink/30 hover:text-terracotta transition-colors text-right"
+                >
+                  verify ↗
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Tier progress ─────────────────────────────────────────────── */}
       {data && data.ownedAgents.length > 0 && isOwn && (
         <div className="mb-10 border border-ink/8 p-6">
           <h2 className="font-display text-xl mb-1">Rank progress</h2>
           <p className="text-xs text-ink/30 mb-5">
-            Ranks are earned from your on-chain record — they cannot be bought. A slash resets progress.
+            Ranks are computed live from your on-chain record. A slash resets progress.
+            {data.bestCalls.length > 0 && (
+              <> Your best verified call: <span className={`font-mono ${data.bestCalls[0]!.pctReturn >= 0 ? "text-olive" : "text-terracotta"}`}>
+                {data.bestCalls[0]!.pctReturn >= 0 ? "+" : ""}{data.bestCalls[0]!.pctReturn.toFixed(2)}%
+              </span> on {data.bestCalls[0]!.marketId}.</>
+            )}
           </p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {(["scout", "proven", "sentinel", "alpha"] as Tier[]).map(tier => {

@@ -138,6 +138,60 @@ export async function GET(_req: Request, { params }: { params: { address: string
     WHERE LOWER(follower_addr) = ${address} AND pnl_usdc IS NOT NULL
   ` as [{ total: string | null }];
 
+  // ── Best verified calls (top P&L intents for owned agents) ───────────────
+  const agentIds = ownedAgents.map(a => a.erc8004Id);
+  let bestCalls: Array<{
+    intentHash:   string;
+    erc8004Id:    number;
+    agentName:    string;
+    marketId:     string;
+    isLong:       boolean;
+    entryPricePx: number;
+    closePricePx: number;
+    pctReturn:    number;
+    submittedAt:  string;
+  }> = [];
+
+  if (agentIds.length > 0) {
+    const callRows = await sql`
+      SELECT i.intent_hash, i.erc8004_id, i.market_id, i.notional_usdc,
+             i.entry_price_px, i.close_price_px, i.submitted_at,
+             m.name AS agent_name
+      FROM intents i
+      LEFT JOIN agent_metadata m ON m.erc8004_id = i.erc8004_id
+      WHERE i.erc8004_id = ANY(${agentIds})
+        AND i.entry_price_px IS NOT NULL
+        AND i.close_price_px IS NOT NULL
+      ORDER BY i.submitted_at DESC
+      LIMIT 100
+    ` as Array<{
+      intent_hash: string; erc8004_id: string; market_id: string;
+      notional_usdc: string; entry_price_px: string; close_price_px: string;
+      submitted_at: string; agent_name: string | null;
+    }>;
+
+    bestCalls = callRows
+      .map(r => {
+        const isLong    = BigInt(r.notional_usdc) >= 0n;
+        const entry     = Number(r.entry_price_px);
+        const close     = Number(r.close_price_px);
+        const pctReturn = (close - entry) / entry * 100 * (isLong ? 1 : -1);
+        return {
+          intentHash:   r.intent_hash,
+          erc8004Id:    Number(r.erc8004_id),
+          agentName:    r.agent_name ?? `Agent #${r.erc8004_id}`,
+          marketId:     r.market_id,
+          isLong,
+          entryPricePx: entry,
+          closePricePx: close,
+          pctReturn,
+          submittedAt:  r.submitted_at,
+        };
+      })
+      .sort((a, b) => b.pctReturn - a.pctReturn)
+      .slice(0, 5);
+  }
+
   const stats = {
     totalBondLive:   ownedAgents.reduce((s, a) => s + a.bondLive, 0),
     totalFollowers:  ownedAgents.reduce((s, a) => s + a.followerCount, 0),
@@ -146,5 +200,5 @@ export async function GET(_req: Request, { params }: { params: { address: string
     followerPnlUsdc: followerPnlRow[0]?.total !== null ? Number(followerPnlRow[0]?.total ?? 0) : null,
   };
 
-  return NextResponse.json({ address, ownedAgents, following, stats });
+  return NextResponse.json({ address, ownedAgents, following, stats, bestCalls });
 }

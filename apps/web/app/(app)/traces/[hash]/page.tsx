@@ -2,11 +2,17 @@ import Link from "next/link";
 import { db, intents, copies, refusals, agents, traces } from "@phronos/db";
 import { eq } from "drizzle-orm";
 import { rawSql } from "@phronos/db";
-import { arcscanAddress, arcscanBlock, resolveUrl } from "@phronos/shared";
+import { arcscanAddress, arcscanBlock, resolveUrl, getPublicClient, getDeployedAddresses } from "@phronos/shared";
 import { notFound } from "next/navigation";
+import { parseAbi } from "viem";
 import { agentName } from "@/lib/agents";
 import { ShareButton } from "@/components/ShareButton";
+import { computeTier, TIER_META } from "@/lib/tiers";
 import type { Metadata } from "next";
+
+const ORACLE_ABI = parseAbi([
+  "function sharpeOf(uint256 erc8004Id) external view returns (int256 sharpe, uint64 updatedAt)",
+]);
 
 const VENUE_NAMES: Record<number, string> = {
   0: "Arc USDC Swap", 1: "Hyperliquid Perp", 2: "Polymarket",
@@ -27,16 +33,50 @@ async function getIntentData(hash: string) {
   const intent = intentRows[0];
   if (!intent) return null;
 
-  const [agentRows, traceRows, metaRows] = await Promise.all([
+  const sql = rawSql();
+  const [agentRows, traceRows, metaRows, statRows] = await Promise.all([
     db().select().from(agents).where(eq(agents.erc8004Id, intent.erc8004Id)).limit(1),
     db().select().from(traces).where(eq(traces.intentHash, intent.traceCid)).limit(1),
-    rawSql()`SELECT name FROM agent_metadata WHERE erc8004_id = ${intent.erc8004Id} LIMIT 1`,
+    sql`SELECT name FROM agent_metadata WHERE erc8004_id = ${intent.erc8004Id} LIMIT 1`,
+    sql`
+      SELECT
+        COUNT(DISTINCT s.block_number)  AS slash_count,
+        COUNT(DISTINCT i2.intent_hash)  AS intent_count,
+        COUNT(DISTINCT p.follower_addr) AS follower_count
+      FROM agents a
+      LEFT JOIN slashes  s  ON s.erc8004_id  = a.erc8004_id
+      LEFT JOIN intents  i2 ON i2.erc8004_id = a.erc8004_id
+      LEFT JOIN policies p  ON p.erc8004_id  = a.erc8004_id
+      WHERE a.erc8004_id = ${intent.erc8004Id}
+      GROUP BY a.erc8004_id
+    `,
   ]);
+
+  let sharpe7d = 0;
+  try {
+    const { slashOracle } = getDeployedAddresses();
+    if (slashOracle) {
+      const [s] = await getPublicClient().readContract({
+        address: slashOracle, abi: ORACLE_ABI,
+        functionName: "sharpeOf", args: [BigInt(intent.erc8004Id)],
+      }) as [bigint, bigint];
+      sharpe7d = Number(s) / 1e18;
+    }
+  } catch {}
+
+  const stats = (statRows as Array<{slash_count: string; intent_count: string; follower_count: string}>)[0];
+  const tier  = computeTier({
+    intentCount:   Number(stats?.intent_count   ?? 0),
+    sharpe7d,
+    slashCount:    Number(stats?.slash_count    ?? 0),
+    followerCount: Number(stats?.follower_count ?? 0),
+  });
 
   return {
     intent, agent: agentRows[0], ipfsCid: traceRows[0]?.traceCid ?? null,
     copies: copyRows, refusals: refusalRows,
     agentDisplayName: (metaRows as Array<{name: string}>)[0]?.name ?? agentName(intent.erc8004Id),
+    tier, sharpe7d,
   };
 }
 
@@ -44,7 +84,7 @@ export async function generateMetadata({ params }: { params: { hash: string } })
   const data = await getIntentData(params.hash);
   if (!data) return { title: "Intent not found — Phronos" };
 
-  const { intent, agentDisplayName } = data;
+  const { intent, agentDisplayName, tier } = data;
   const isLong  = Number(intent.notionalUsdc) >= 0;
   const entry   = intent.entryPricePx ? Number(intent.entryPricePx) : null;
   const close   = intent.closePricePx ? Number(intent.closePricePx) : null;
@@ -55,7 +95,8 @@ export async function generateMetadata({ params }: { params: { hash: string } })
     pctStr = ` → ${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
   }
 
-  const title       = `${agentDisplayName}: ${isLong ? "LONG" : "SHORT"} ${intent.marketId}${pctStr} — verified on Phronos`;
+  const tierLabel   = tier !== "scout" ? ` [${TIER_META[tier].label}]` : "";
+  const title       = `${agentDisplayName}${tierLabel}: ${isLong ? "LONG" : "SHORT"} ${intent.marketId}${pctStr} — verified on Phronos`;
   const description = entry
     ? `Entry $${entry.toLocaleString()}${close ? ` → close $${close.toLocaleString()}` : " (open)"}. Anchored at block ${intent.blockNumber.toLocaleString()} on Arc Testnet. Fully reproducible.`
     : `${isLong ? "LONG" : "SHORT"} ${intent.marketId} intent by ${agentDisplayName}. Anchored on Arc at block ${intent.blockNumber.toLocaleString()}.`;
@@ -73,7 +114,7 @@ export default async function TracePage({ params }: { params: { hash: string } }
   const data = await getIntentData(hash);
   if (!data) notFound();
 
-  const { intent, agent, ipfsCid, copies: copyRows, refusals: refusalRows, agentDisplayName } = data;
+  const { intent, agent, ipfsCid, copies: copyRows, refusals: refusalRows, agentDisplayName, tier, sharpe7d } = data;
   const isLong  = Number(intent.notionalUsdc) >= 0;
   const entry   = intent.entryPricePx ? Number(intent.entryPricePx)  : null;
   const close   = intent.closePricePx ? Number(intent.closePricePx)  : null;
@@ -105,11 +146,20 @@ export default async function TracePage({ params }: { params: { hash: string } }
       </div>
 
       {/* ── Call header ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
         <span className={`text-xs font-mono px-2 py-0.5 ${isLong ? "bg-olive/15 text-olive" : "bg-terracotta/15 text-terracotta"}`}>
           {isLong ? "LONG" : "SHORT"}
         </span>
         <h1 className="font-display text-4xl">{intent.marketId}</h1>
+        <span className="text-sm text-ink/50 font-mono">by {agentDisplayName}</span>
+        {tier !== "scout" && (() => {
+          const m = TIER_META[tier];
+          return (
+            <span className={`text-[9px] font-mono uppercase tracking-widest px-1.5 py-0.5 border ${m.color} ${m.bg} ${m.border}`}>
+              {m.label}
+            </span>
+          );
+        })()}
       </div>
       <p className="text-xs font-mono text-ink/25 mb-8 break-all">{hash}</p>
 
@@ -147,9 +197,17 @@ export default async function TracePage({ params }: { params: { hash: string } }
               </span>
             </div>
           )}
-          <p className="text-[10px] text-ink/15 font-mono mt-3 text-center">
-            Prices from Hyperliquid · anchored at block {intent.blockNumber.toLocaleString()} on Arc Testnet
-          </p>
+          <div className="mt-3 flex items-center justify-center gap-4 text-[10px] font-mono text-ink/20">
+            <span>Prices from Hyperliquid</span>
+            <span>·</span>
+            <span>Block {intent.blockNumber.toLocaleString()} on Arc</span>
+            {sharpe7d !== 0 && (
+              <>
+                <span>·</span>
+                <span>Agent 7d Sharpe: <span className={sharpe7d >= 0 ? "text-olive/50" : "text-terracotta/50"}>{sharpe7d >= 0 ? "+" : ""}{sharpe7d.toFixed(2)}</span></span>
+              </>
+            )}
+          </div>
         </div>
       )}
 
