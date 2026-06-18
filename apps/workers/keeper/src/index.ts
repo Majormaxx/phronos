@@ -241,15 +241,27 @@ async function runKeeper(): Promise<void> {
 
   console.log(`[keeper] BTC=$${prices.btcNow.toFixed(2)} ETH=$${prices.ethNow.toFixed(2)}`);
 
-  const currentBlock = await publicClient.getBlockNumber();
-  const fromBlock    = currentBlock > 9999n ? currentBlock - 9999n : 0n;
-
-  const logs = await publicClient.getLogs({
-    address: router, event: ROUTER_ABI[0], fromBlock, toBlock: currentBlock,
-  });
+  // Read intents from DB (indexed by the indexer) — avoids Arc RPC 10k-block getLogs limit.
+  // The DB has the full history; getLogs would be capped at 10k blocks (~5.5h).
+  const nsql = rawSql();
+  const allIntentRows = await nsql`
+    SELECT intent_hash, block_number, notional_usdc, erc8004_id
+    FROM intents
+    ORDER BY submitted_at DESC
+    LIMIT 500
+  ` as Array<{ intent_hash: string; block_number: number; notional_usdc: string; erc8004_id: number }>;
 
   for (const agentId of agentIdsBig) {
-    const agentLogs = logs.filter(l => l.args.erc8004Id === agentId);
+    const agentIntentRows = allIntentRows.filter(r => BigInt(r.erc8004_id) === agentId);
+    // Shape matches what computeAgentSharpe expects (same as getLogs args)
+    const agentLogs = agentIntentRows.map(r => ({
+      blockNumber: BigInt(r.block_number),
+      args: {
+        notionalUSDC: BigInt(r.notional_usdc),
+        intentHash:   r.intent_hash as `0x${string}`,
+      },
+    }));
+
     const sharpe    = await computeAgentSharpe(agentId, agentLogs, publicClient, prices);
     const sharpeWad = BigInt(Math.round(sharpe * 1e18));
     console.log(`[keeper] agent=${agentId} intents=${agentLogs.length} sharpe=${sharpe.toFixed(4)}`);
