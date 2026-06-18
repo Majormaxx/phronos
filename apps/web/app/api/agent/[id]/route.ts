@@ -39,6 +39,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
     return Promise.race([p.catch(() => null), new Promise<null>(r => setTimeout(() => r(null), ms))]);
   }
+  function wadToFloat(wad: bigint): number {
+    const neg = wad < 0n; const abs = neg ? -wad : wad;
+    const INT = BigInt(1_000_000_000_000_000_000n);
+    const i = abs / INT; const f = (abs % INT).toString().padStart(18, "0").slice(0, 9);
+    return (neg ? -1 : 1) * parseFloat(`${i}.${f}`);
+  }
 
   const [sharpeRaw, bondRaw] = await Promise.all([
     withTimeout(
@@ -55,9 +61,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     ),
   ]);
 
-  if (sharpeRaw !== null && Array.isArray(sharpeRaw)) {
-    sharpe7d        = Number((sharpeRaw as [bigint, bigint])[0]) / 1e18;
-    sharpeUpdatedAt = Number((sharpeRaw as [bigint, bigint])[1]);
+  if (sharpeRaw !== null) {
+    const arr = sharpeRaw as readonly [bigint, bigint];
+    sharpe7d        = wadToFloat(arr[0]);
+    sharpeUpdatedAt = Number(arr[1]);
   }
   // Fall back to DB bond if on-chain timed out
   bondLive = bondRaw !== null

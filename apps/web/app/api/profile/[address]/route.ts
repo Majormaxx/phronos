@@ -59,6 +59,12 @@ export async function GET(_req: Request, { params }: { params: { address: string
   function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
     return Promise.race([p.catch(() => null), new Promise<null>(r => setTimeout(() => r(null), ms))]);
   }
+  function wadToFloat(wad: bigint): number {
+    const neg = wad < 0n; const abs = neg ? -wad : wad;
+    const INT = BigInt(1_000_000_000_000_000_000n);
+    const i = abs / INT; const f = (abs % INT).toString().padStart(18, "0").slice(0, 9);
+    return (neg ? -1 : 1) * parseFloat(`${i}.${f}`);
+  }
 
   // Enrich with on-chain data (bond, sharpe, fees) in parallel — 4s timeout per read
   const ownedAgents = await Promise.all(agentRows.map(async row => {
@@ -85,8 +91,8 @@ export async function GET(_req: Request, { params }: { params: { address: string
     ]);
 
     const bondLive = bondRaw !== null ? Number(bondRaw as bigint) / 1e6 : 0;
-    const sharpe7d = (sharpeRaw !== null && Array.isArray(sharpeRaw))
-      ? Number((sharpeRaw as [bigint, bigint])[0]) / 1e18
+    const sharpe7d = sharpeRaw !== null
+      ? wadToFloat((sharpeRaw as readonly [bigint, bigint])[0])
       : 0;
     const feesUsdc = feesRaw !== null ? Number(feesRaw as bigint) / 1e6 : 0;
 

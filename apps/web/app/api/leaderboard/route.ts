@@ -26,6 +26,20 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   ]);
 }
 
+/** Convert a WAD-encoded int256 (18 decimal places) to a JavaScript float.
+ *  Uses pure BigInt arithmetic to avoid float64 precision loss on large values. */
+function wadToFloat(wad: bigint): number {
+  const neg   = wad < 0n;
+  const abs   = neg ? -wad : wad;
+  const INT   = BigInt(1_000_000_000_000_000_000n); // 1e18
+  const int   = abs / INT;
+  const frac  = abs % INT;
+  // Keep 9 significant decimal digits (enough for Sharpe display)
+  const fracStr = frac.toString().padStart(18, "0").slice(0, 9);
+  const result  = parseFloat(`${int}.${fracStr}`);
+  return neg ? -result : result;
+}
+
 export async function GET() {
   try {
     const store  = db();
@@ -81,12 +95,13 @@ export async function GET() {
       let feesUsdc        = 0;
       let bondLive: number               = bondUsdc; // DB fallback if on-chain times out
 
-      if (sharpeRaw !== null && Array.isArray(sharpeRaw)) {
-        sharpe7d        = Number((sharpeRaw as [bigint, bigint])[0]) / 1e18;
-        sharpeUpdatedAt = Number((sharpeRaw as [bigint, bigint])[1]);
+      if (sharpeRaw !== null) {
+        const arr = sharpeRaw as readonly [bigint, bigint];
+        sharpe7d        = wadToFloat(arr[0]);
+        sharpeUpdatedAt = Number(arr[1]);
       }
-      if (feesRaw   !== null) feesUsdc = Number(feesRaw as bigint) / 1e6;
-      if (bondRaw   !== null) bondLive = Number(bondRaw as bigint) / 1e6;
+      if (feesRaw !== null) feesUsdc = Number(feesRaw as bigint) / 1e6;
+      if (bondRaw !== null) bondLive  = Number(bondRaw as bigint) / 1e6;
 
       const sc = Number(slashCount[0]?.count ?? 0);
       const ic = Number(intentCount[0]?.count ?? 0);
